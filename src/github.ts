@@ -14,5 +14,9 @@ export const githubTools={
  delete_file:(u:AuthUser,o:string,r:string,p:string,m:string,s:string,b?:string)=>gh(u,"/repos/"+o+"/"+r+"/contents/"+p,{method:"DELETE",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:m,sha:s,branch:b})}),
  async create_branch(u:AuthUser,o:string,r:string,b:string,from="main"){const x=await gh(u,"/repos/"+o+"/"+r+"/git/ref/heads/"+e(from));return gh(u,"/repos/"+o+"/"+r+"/git/refs",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({ref:"refs/heads/"+b,sha:x.object.sha})})},
  create_pull_request:(u:AuthUser,o:string,r:string,t:string,h:string,b:string,body="")=>gh(u,"/repos/"+o+"/"+r+"/pulls",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({title:t,head:h,base:b,body})}),
- list_actions_runs:(u:AuthUser,o:string,r:string,b?:string)=>gh(u,"/repos/"+o+"/"+r+"/actions/runs"+(b?"?branch="+e(b)+"&per_page=20":"?per_page=20"))
+ list_actions_runs:(u:AuthUser,o:string,r:string,b?:string)=>gh(u,"/repos/"+o+"/"+r+"/actions/runs"+(b?"?branch="+e(b)+"&per_page=20":"?per_page=20")),
+ search_code:(u:AuthUser,q:string)=>gh(u,"/search/code?q="+e(q)),
+ search_repositories:(u:AuthUser,q:string)=>gh(u,"/search/repositories?q="+e(q)),
+ get_actions_logs:(u:AuthUser,o:string,r:string,runId:number)=>gh(u,"/repos/"+o+"/"+r+"/actions/runs/"+runId+"/jobs"),
+ get_issues:(u:AuthUser,o:string,r:string)=>gh(u,"/repos/"+o+"/"+r+"/issues?state=open&per_page=50")
 };
