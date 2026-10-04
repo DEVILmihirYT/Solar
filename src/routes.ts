@@ -12,10 +12,10 @@ export async function registerRoutes(app:FastifyInstance){
   if(!r.ok)return reply.code(r.status).send({error:"GitHub request failed"});return r.json();
  });
  app.post("/api/agent/run",{preHandler:requireAuth},async(req,reply)=>{
-  const p=z.object({message:z.string().min(1).max(20000),allowWrites:z.boolean().default(false)}).safeParse(req.body);
+  const p=z.object({message:z.string().min(1).max(20000),allowWrites:z.boolean().default(false),allowTermux:z.boolean().default(false)}).safeParse(req.body);
   if(!p.success)return reply.code(400).send({error:"Invalid request"});
   const u=req.authUser!,id=crypto.randomUUID();await pool.query("INSERT INTO agent_runs(id,user_id,status,model) VALUES($1,$2,'running',$3)",[id,u.id,process.env.OPENROUTER_MODEL??"configured"]);
-  try{const result=await runAgent(u,p.data.message,p.data.allowWrites);await pool.query("UPDATE agent_runs SET status='completed',tool_calls=$2,finished_at=now() WHERE id=$1",[id,result.toolCalls]);return {runId:id,...result}}
+  try{const result=await runAgent(u,p.data.message,p.data.allowWrites,p.data.allowTermux);await pool.query("UPDATE agent_runs SET status='completed',tool_calls=$2,finished_at=now() WHERE id=$1",[id,result.toolCalls]);return {runId:id,...result}}
   catch(e){await pool.query("UPDATE agent_runs SET status='failed',finished_at=now() WHERE id=$1",[id]);return reply.code(500).send({error:e instanceof Error?e.message:"Agent failed",runId:id})}
  });
 
@@ -49,6 +49,7 @@ export async function registerRoutes(app:FastifyInstance){
   if(q.rowCount!==1)return reply.code(404).send({error:"Command not found or already completed"});
   return {ok:true};
  });
+ app.get("/api/termux/commands/:id",{preHandler:requireAuth},async(req,reply)=>{const id=(req.params as {id:string}).id;const q=await pool.query<any>("SELECT id,project_id,command,reason,status,exit_code,stdout,stderr,created_at,started_at,finished_at FROM termux_commands WHERE id=$1 AND user_id=$2",[id,req.authUser!.id]);const row=q.rows[0];if(!row)return reply.code(404).send({error:"Command not found"});return row;});
  app.post("/api/termux/commands",{preHandler:requireAuth},async(req,reply)=>{
   const p=z.object({projectId:z.string().min(1).max(200),command:z.string().min(1).max(4000),reason:z.string().min(1).max(1000),destructive:z.boolean().default(false),confirmed:z.boolean().default(false)}).safeParse(req.body);
   if(!p.success)return reply.code(400).send({error:"Invalid command request"});
