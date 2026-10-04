@@ -1,0 +1,22 @@
+import Fastify from "fastify";
+import cookie from "@fastify/cookie";
+import cors from "@fastify/cors";
+import helmet from "@fastify/helmet";
+import rateLimit from "@fastify/rate-limit";
+import { config } from "./config.js";
+import { migrate, pool } from "./db.js";
+import { registerAuth } from "./auth.js";
+import { registerRoutes } from "./routes.js";
+
+const app=Fastify({logger:true,bodyLimit:1048576});
+await app.register(helmet);
+await app.register(cookie,{secret:config.SESSION_SECRET});
+await app.register(cors,{origin:config.FRONTEND_ORIGIN,credentials:true});
+await app.register(rateLimit,{max:120,timeWindow:"1 minute"});
+await migrate();
+await registerAuth(app);
+await registerRoutes(app);
+app.setErrorHandler((error,_req,reply)=>{app.log.error(error);if(!reply.sent)reply.code(error.statusCode&&error.statusCode>=400?error.statusCode:500).send({error:"Internal server error"})});
+const shutdown=async()=>{await app.close();await pool.end();process.exit(0)};
+process.on("SIGTERM",shutdown);process.on("SIGINT",shutdown);
+await app.listen({port:config.PORT,host:"0.0.0.0"});
