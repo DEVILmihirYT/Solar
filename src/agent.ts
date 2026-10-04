@@ -19,6 +19,8 @@ const definitions=[
  {name:"browser_read",description:"Read visible page text from the isolated browser.",parameters:{type:"object",properties:{sessionId:{type:"string"}},required:["sessionId"],additionalProperties:false}},
  {name:"browser_screenshot",description:"Capture an isolated browser screenshot.",parameters:{type:"object",properties:{sessionId:{type:"string"}},required:["sessionId"],additionalProperties:false}},
  {name:"browser_close",description:"Close an isolated browser session.",parameters:{type:"object",properties:{sessionId:{type:"string"}},required:["sessionId"],additionalProperties:false}},
+ {name:"github_search_repositories",description:"Search GitHub repositories.",parameters:{type:"object",properties:{query:{type:"string",maxLength:500}},required:["query"],additionalProperties:false}},
+ {name:"github_search_code",description:"Search code in accessible GitHub repositories.",parameters:{type:"object",properties:{query:{type:"string",maxLength:500}},required:["query"],additionalProperties:false}},
  {name:"github_list_repositories",description:"List accessible repositories.",parameters:{type:"object",properties:{},additionalProperties:false}},
  {name:"github_get_repository",description:"Get repository metadata.",parameters:{type:"object",properties:{owner:{type:"string"},repo:{type:"string"}},required:["owner","repo"],additionalProperties:false}},
  {name:"github_list_files",description:"List a repository path.",parameters:{type:"object",properties:{owner:{type:"string"},repo:{type:"string"},path:{type:"string"},ref:{type:"string"}},required:["owner","repo"],additionalProperties:false}},
@@ -29,6 +31,7 @@ const definitions=[
  {name:"github_create_branch",description:"Create a branch. Requires explicit write permission.",parameters:{type:"object",properties:{owner:{type:"string"},repo:{type:"string"},branch:{type:"string"},from:{type:"string"}},required:["owner","repo","branch"],additionalProperties:false}},
  {name:"github_create_pull_request",description:"Create a pull request. Requires explicit write permission.",parameters:{type:"object",properties:{owner:{type:"string"},repo:{type:"string"},title:{type:"string"},head:{type:"string"},base:{type:"string"},body:{type:"string"}},required:["owner","repo","title","head","base"],additionalProperties:false}},
  {name:"github_get_actions_runs",description:"Inspect recent GitHub Actions runs.",parameters:{type:"object",properties:{owner:{type:"string"},repo:{type:"string"},branch:{type:"string"}},required:["owner","repo"],additionalProperties:false}},
+ {name:"github_get_actions_jobs",description:"Inspect jobs from a GitHub Actions run.",parameters:{type:"object",properties:{owner:{type:"string"},repo:{type:"string"},runId:{type:"integer"}},required:["owner","repo","runId"],additionalProperties:false}},
  {name:"termux_run_command",description:"Queue a safe development command in the explicitly authorized Termux bridge.",parameters:{type:"object",properties:{projectId:{type:"string"},command:{type:"string"},reason:{type:"string"}},required:["projectId","command","reason"],additionalProperties:false}}
 ];
 const writes=new Set(["github_create_file","github_update_file","github_delete_file","github_create_branch","github_create_pull_request"]);
@@ -49,6 +52,8 @@ async function execute(u:AuthUser,name:string,a:any,allowWrites:boolean,allowTer
   case "browser_read":return browserRead(a.sessionId);
   case "browser_screenshot":return browserScreenshot(a.sessionId);
   case "browser_close":return closeBrowser(a.sessionId).then(()=>({ok:true}));
+  case "github_search_repositories":return githubTools.search_repositories(u,a.query);
+  case "github_search_code":return githubTools.search_code(u,a.query);
   case "github_list_repositories":return githubTools.list_repositories(u);
   case "github_get_repository":return githubTools.get_repository(u,a.owner,a.repo);
   case "github_list_files":return githubTools.list_files(u,a.owner,a.repo,a.path??"",a.ref);
@@ -59,6 +64,7 @@ async function execute(u:AuthUser,name:string,a:any,allowWrites:boolean,allowTer
   case "github_create_branch":return githubTools.create_branch(u,a.owner,a.repo,a.branch,a.from??"main");
   case "github_create_pull_request":return githubTools.create_pull_request(u,a.owner,a.repo,a.title,a.head,a.base,a.body??"");
   case "github_get_actions_runs":return githubTools.list_actions_runs(u,a.owner,a.repo,a.branch);
+  case "github_get_actions_jobs":return githubTools.get_actions_logs(u,a.owner,a.repo,a.runId);
   default:throw new Error("Unknown tool: "+name);
  }
 }
