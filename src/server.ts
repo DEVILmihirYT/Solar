@@ -16,7 +16,11 @@ await app.register(rateLimit,{max:120,timeWindow:"1 minute"});
 await migrate();
 await registerAuth(app);
 await registerRoutes(app);
-app.setErrorHandler((error,_req,reply)=>{app.log.error(error);if(!reply.sent)reply.code(error.statusCode&&error.statusCode>=400?error.statusCode:500).send({error:"Internal server error"})});
+app.setErrorHandler((error,_req,reply)=>{
+ app.log.error(error);
+ const status=typeof error==="object"&&error!==null&&"statusCode" in error&&typeof (error as {statusCode?:unknown}).statusCode==="number" ? (error as {statusCode:number}).statusCode : 500;
+ reply.code(status>=400?status:500).send({error:"Internal server error"});
+});
 const shutdown=async()=>{await app.close();await pool.end();process.exit(0)};
 process.on("SIGTERM",shutdown);process.on("SIGINT",shutdown);
 await app.listen({port:config.PORT,host:"0.0.0.0"});
