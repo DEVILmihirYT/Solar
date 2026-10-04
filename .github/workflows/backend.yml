@@ -1,0 +1,22 @@
+name: Solar Backend CI
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm install
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm test
