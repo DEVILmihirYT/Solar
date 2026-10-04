@@ -3,7 +3,7 @@ import net from "node:net";
 import { URL } from "node:url";
 
 function privateIp(ip:string){
- if(net.isIP(ip)===4){const p=ip.split(".").map(Number);return p[0]===10||p[0]===127||p[0]===0||p[0]===169&&p[1]===254||p[0]===172&&p[1]>=16&&p[1]<=31||p[0]===192&&p[1]===168}
+ if(net.isIP(ip)===4){const p=ip.split(".").map(Number);const [a,b]=p;return a===10||a===127||a===0||a===169&&b===254||a===172&&b>=16&&b<=31||a===192&&b===168}
  if(net.isIP(ip)===6){const x=ip.toLowerCase();return x==="::1"||x==="::"||x.startsWith("fc")||x.startsWith("fd")||x.startsWith("fe80:")}
  return true;
 }
@@ -27,6 +27,6 @@ export async function webSearch(query:string){
  const x=await fetch(url,{headers:{"User-Agent":"SolarBot/1.0 (+web-search)"}});
  if(!x.ok)throw new Error("Web search "+x.status);const html=await x.text();
  const results:string[]=[];const re=/<a[^>]+class=["'][^"']*result__a[^"']*["'][^>]+href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;let m:RegExpExecArray|null;
- while((m=re.exec(html))&&results.length<10){const title=m[2].replace(/<[^>]+>/g,"").replace(/&amp;/g,"&").trim();results.push(JSON.stringify({title,url:m[1]}))}
+ while((m=re.exec(html))&&results.length<10){const href=m[1],rawTitle=m[2];if(!href||rawTitle===undefined)continue;const title=rawTitle.replace(/<[^>]+>/g,"").replace(/&amp;/g,"&").trim();results.push(JSON.stringify({title,url:href}))}
  return results.map(s=>JSON.parse(s));
 }
