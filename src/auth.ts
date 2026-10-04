@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
+import "@fastify/cookie";
 import crypto from "node:crypto";
 import { config } from "./config.js";
 import { pool } from "./db.js";
