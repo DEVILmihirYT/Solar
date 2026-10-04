@@ -3,7 +3,7 @@ import net from "node:net";
 import { URL } from "node:url";
 
 function privateIp(ip:string){
- if(net.isIP(ip)===4){const p=ip.split(".").map(Number);const [a,b]=p;return a===10||a===127||a===0||a===169&&b===254||a===172&&b>=16&&b<=31||a===192&&b===168}
+ if(net.isIP(ip)===4){const p=ip.split(".").map(Number);if(p.length!==4||p.some(Number.isNaN))return true;const a=p[0]!,b=p[1]!;return a===10||a===127||a===0||a===169&&b===254||a===172&&b>=16&&b<=31||a===192&&b===168}
  if(net.isIP(ip)===6){const x=ip.toLowerCase();return x==="::1"||x==="::"||x.startsWith("fc")||x.startsWith("fd")||x.startsWith("fe80:")}
  return true;
 }
