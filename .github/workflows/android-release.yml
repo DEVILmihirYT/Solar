@@ -27,6 +27,12 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      - name: Read Android version
+        id: version
+        working-directory: android
+        shell: bash
+        run: echo "name=$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' app/build.gradle.kts)" >> "$GITHUB_OUTPUT"
+
       - name: Build release APK (32-bit + 64-bit ARM)
         working-directory: android
         run: gradle :app:assembleRelease --no-daemon --stacktrace -Dkotlin.compiler.execution.strategy=in-process
@@ -38,7 +44,7 @@ jobs:
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: solar-android-v0.3.1-${{ github.sha }}
+          name: solar-android-v${{ steps.version.outputs.name }}-${{ github.sha }}
           path: android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 14
@@ -47,7 +53,7 @@ jobs:
         if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: solar-android-v0.3.1
-          name: Solar Android v0.3.1
+          tag_name: solar-android-v${{ steps.version.outputs.name }}
+          name: Solar Android v${{ steps.version.outputs.name }}
           generate_release_notes: true
           files: android/app/build/outputs/apk/release/app-release.apk
