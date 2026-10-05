@@ -19,6 +19,8 @@ CREATE TABLE IF NOT EXISTS agent_runs(id UUID PRIMARY KEY,user_id UUID NOT NULL 
 CREATE TABLE IF NOT EXISTS audit_log(id BIGSERIAL PRIMARY KEY,user_id UUID REFERENCES users(id) ON DELETE SET NULL,action TEXT NOT NULL,resource TEXT,metadata JSONB NOT NULL DEFAULT '{}'::jsonb,created_at TIMESTAMPTZ NOT NULL DEFAULT now());
 CREATE TABLE IF NOT EXISTS termux_bridges(id UUID PRIMARY KEY,user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,name TEXT NOT NULL,token_hash TEXT UNIQUE NOT NULL,connected_at TIMESTAMPTZ,created_at TIMESTAMPTZ NOT NULL DEFAULT now(),last_seen_at TIMESTAMPTZ);
 CREATE TABLE IF NOT EXISTS termux_commands(id UUID PRIMARY KEY,user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,bridge_id UUID REFERENCES termux_bridges(id) ON DELETE SET NULL,project_id TEXT NOT NULL,command TEXT NOT NULL,reason TEXT NOT NULL,status TEXT NOT NULL,destructive BOOLEAN NOT NULL DEFAULT false,exit_code INTEGER,stdout TEXT,stderr TEXT,created_at TIMESTAMPTZ NOT NULL DEFAULT now(),started_at TIMESTAMPTZ,finished_at TIMESTAMPTZ);
+ALTER TABLE github_accounts ADD COLUMN IF NOT EXISTS access_expires_at TIMESTAMPTZ;
+ALTER TABLE github_accounts ADD COLUMN IF NOT EXISTS refresh_expires_at TIMESTAMPTZ;
 CREATE INDEX IF NOT EXISTS termux_queue_idx ON termux_commands(user_id,status,created_at);
 `);
 }
