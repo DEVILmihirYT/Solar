@@ -724,8 +724,7 @@ fun SolarApp(context: Context) {
                     Row(modifier = Modifier.fillMaxWidth()) {
                         Column(
                             modifier = Modifier
-                                .width(190.dp)
-                                .weight(0.0f),
+                                .width(190.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Button(
@@ -740,17 +739,23 @@ fun SolarApp(context: Context) {
                             LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 items(sessions) { session ->
                                     Card(
-                                        onClick = { selectedSessionId = session.id },
                                         modifier = Modifier.fillMaxWidth(),
-                                        shape = RoundedCornerShape(12.dp)
+                                        shape = RoundedCornerShape(12.dp),
+                                        onClick = { selectedSessionId = session.id }
                                     ) {
-                                        Column(Modifier.padding(10.dp)) {
-                                            Text(
-                                                session.title,
-                                                fontWeight = if (session.id == selectedSessionId) FontWeight.Bold else FontWeight.Normal,
-                                                maxLines = 2
-                                            )
-                                            Text(session.modelId ?: "Auto", style = MaterialTheme.typography.labelSmall)
+                                        Row(
+                                            Modifier.padding(8.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Column(Modifier.weight(1f)) {
+                                                Text(
+                                                    session.title,
+                                                    fontWeight = if (session.id == selectedSessionId) FontWeight.Bold else FontWeight.Normal,
+                                                    maxLines = 2
+                                                )
+                                                Text(session.modelId ?: "Auto", style = MaterialTheme.typography.labelSmall)
+                                            }
+                                            TextButton(onClick = { showDeleteSessionDialog = session }) { Text("Delete") }
                                         }
                                     }
                                 }
