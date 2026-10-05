@@ -5,6 +5,7 @@ on:
   push:
     paths:
       - "android/**"
+      - "src/**"
       - ".github/workflows/android-release.yml"
 
 permissions:
