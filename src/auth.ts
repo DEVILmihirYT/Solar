@@ -216,8 +216,8 @@ export async function registerAuth(app: FastifyInstance) {
         return reply
           .type("text/html; charset=utf-8")
           .send(
-            "<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">" +
-            "<title>Solar GitHub connected</title></head><body style="font-family:system-ui;padding:32px">" +
+            "<!doctype html><html><head><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">" +
+            "<title>Solar GitHub connected</title></head><body style=\"font-family:system-ui;padding:32px\">" +
             "<h2>GitHub connected</h2><p>Return to the Solar Android app. You can close this page.</p>" +
             "</body></html>"
           );
