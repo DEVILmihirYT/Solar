@@ -65,8 +65,8 @@ export async function registerRoutes(app:FastifyInstance){
   }).safeParse(req.body);
   if(!p.success)return reply.code(400).send({error:"Invalid project update"});
   const q=await pool.query(
-   "UPDATE projects SET name=COALESCE($3,name),description=COALESCE($4,description),github_owner=$5,github_repo=$6,github_ref=$7,updated_at=now() WHERE id=$1 AND user_id=$2 RETURNING id,name,description,github_owner AS \"githubOwner\",github_repo AS \"githubRepo\",github_ref AS \"githubRef\",created_at AS \"createdAt\",updated_at AS \"updatedAt\"",
-   [id,req.authUser!.id,p.data.name??null,p.data.description??null,p.data.githubOwner===undefined?null:p.data.githubOwner,p.data.githubRepo===undefined?null:p.data.githubRepo,p.data.githubRef===undefined?null:p.data.githubRef]
+   "UPDATE projects SET name=COALESCE($3,name),description=COALESCE($4,description),github_owner=COALESCE($5,github_owner),github_repo=COALESCE($6,github_repo),github_ref=COALESCE($7,github_ref),updated_at=now() WHERE id=$1 AND user_id=$2 RETURNING id,name,description,github_owner AS \"githubOwner\",github_repo AS \"githubRepo\",github_ref AS \"githubRef\",created_at AS \"createdAt\",updated_at AS \"updatedAt\"",
+   [id,req.authUser!.id,p.data.name??null,p.data.description??null,p.data.githubOwner??null,p.data.githubRepo??null,p.data.githubRef??null]
   );
   const row=q.rows[0];
   if(!row)return reply.code(404).send({error:"Project not found"});
