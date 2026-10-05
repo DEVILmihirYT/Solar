@@ -5,7 +5,7 @@ on:
   pull_request:
     branches: [main]
 permissions:
-  contents: read
+  contents: write
 jobs:
   verify:
     runs-on: ubuntu-latest
@@ -19,3 +19,54 @@ jobs:
       - run: npm run typecheck
       - run: npm run build
       - run: npm test
+  android-release:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Read Android version
+        id: version
+        working-directory: android
+        shell: bash
+        run: echo "name=$(sed -n 's/.*versionName = \"\\([^\"]*\\)\".*/\\1/p' app/build.gradle.kts)" >> "$GITHUB_OUTPUT"
+      - name: Build release APKs
+        working-directory: android
+        env:
+          SOLAR_BACKEND_URL: ${{ vars.SOLAR_BACKEND_URL }}
+        run: gradle :app:assembleRelease --no-daemon --stacktrace -Dkotlin.compiler.execution.strategy=in-process
+      - name: Verify ABI-specific APKs
+        working-directory: android
+        shell: bash
+        run: |
+          test -f app/build/outputs/apk/release/app-armeabi-v7a-release.apk
+          test -f app/build/outputs/apk/release/app-arm64-v8a-release.apk
+          test -f app/build/outputs/apk/release/app-universal-release.apk
+          unzip -l app/build/outputs/apk/release/app-armeabi-v7a-release.apk | grep -q 'lib/armeabi-v7a/'
+          unzip -l app/build/outputs/apk/release/app-arm64-v8a-release.apk | grep -q 'lib/arm64-v8a/'
+          unzip -l app/build/outputs/apk/release/app-universal-release.apk | grep -q 'lib/armeabi-v7a/'
+          unzip -l app/build/outputs/apk/release/app-universal-release.apk | grep -q 'lib/arm64-v8a/'
+      - name: Upload Android artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: solar-android-v${{ steps.version.outputs.name }}-${{ github.sha }}
+          path: |
+            android/app/build/outputs/apk/release/app-armeabi-v7a-release.apk
+            android/app/build/outputs/apk/release/app-arm64-v8a-release.apk
+            android/app/build/outputs/apk/release/app-universal-release.apk
+          if-no-files-found: error
+          retention-days: 14
+      - name: Publish Android release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: solar-android-v${{ steps.version.outputs.name }}
+          name: Solar Android v${{ steps.version.outputs.name }}
+          generate_release_notes: true
+          files: |
+            android/app/build/outputs/apk/release/app-armeabi-v7a-release.apk
+            android/app/build/outputs/apk/release/app-arm64-v8a-release.apk
+            android/app/build/outputs/apk/release/app-universal-release.apk
