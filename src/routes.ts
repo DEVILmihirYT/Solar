@@ -160,9 +160,19 @@ export async function registerRoutes(app:FastifyInstance){
    sessionProjectId=sessionProjectId??row.project_id;
    modelId=modelId??row.model_id;
   }
+  let projectContext="";
   if(sessionProjectId){
-   const pcheck=await pool.query("SELECT 1 FROM projects WHERE id=$1 AND user_id=$2",[sessionProjectId,u.id]);
+   const pcheck=await pool.query<{name:string;github_owner:string|null;github_repo:string|null;github_ref:string|null}>(
+    "SELECT name,github_owner,github_repo,github_ref FROM projects WHERE id=$1 AND user_id=$2",[sessionProjectId,u.id]
+   );
    if(!pcheck.rowCount)return reply.code(404).send({error:"Project not found"});
+   const project=pcheck.rows[0]!;
+   projectContext=[
+    "Project: "+project.name,
+    project.github_owner&&project.github_repo
+      ? "GitHub repository: "+project.github_owner+"/"+project.github_repo+" (ref: "+(project.github_ref??"main")+")"
+      : "No GitHub repository linked."
+   ].join("\n");
   }
   if(!sessionId){
    sessionId=crypto.randomUUID();
@@ -197,6 +207,7 @@ export async function registerRoutes(app:FastifyInstance){
     allowBrowser:p.data.allowBrowser,
     allowFallback:p.data.allowFallback,
     history,
+    projectContext,
     onEvent:(e:AgentEvent)=>{if(p.data.stream)reply.raw.write(`event: ${e.type}\\ndata: ${JSON.stringify(e.data??e.name??null)}\\n\\n`)}
    });
    await pool.query("INSERT INTO chat_messages(id,session_id,role,content,model_id) VALUES($1,$2,'assistant',$3,$4)",[crypto.randomUUID(),sessionId,result.message,result.modelId]);
