@@ -299,12 +299,13 @@ class SolarApi(context: Context) {
             .put("projectId", projectId)
             .put("modelId", modelId)
         client.newCall(builder("/api/sessions", "POST", json.toString())).execute().use { response ->
-            val item = JSONObject(body(response, "Unable to create chat."))
+            val wrapper = JSONObject(body(response, "Unable to create chat."))
+            val item = wrapper.optJSONObject("session") ?: wrapper
             ChatSession(
                 id = item.optString("id"),
                 title = item.optString("title", "New chat"),
-                projectId = item.optString("project_id").ifBlank { null },
-                modelId = item.optString("model_id").ifBlank { null }
+                projectId = item.optString("projectId").ifBlank { item.optString("project_id").ifBlank { null } },
+                modelId = item.optString("modelId").ifBlank { item.optString("model_id").ifBlank { null } }
             )
         }
     }
