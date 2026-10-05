@@ -298,7 +298,7 @@ class SolarApi(context: Context) {
             .put("title", "New chat")
             .put("projectId", projectId)
             .put("modelId", modelId)
-        client.newCall(builder("/api/chat/sessions", "POST", json.toString())).execute().use { response ->
+        client.newCall(builder("/api/sessions", "POST", json.toString())).execute().use { response ->
             val item = JSONObject(body(response, "Unable to create chat."))
             ChatSession(
                 id = item.optString("id"),
@@ -310,13 +310,13 @@ class SolarApi(context: Context) {
     }
 
     suspend fun deleteSession(id: String) = withContext(Dispatchers.IO) {
-        client.newCall(builder("/api/chat/sessions/" + id, "DELETE")).execute().use { response ->
+        client.newCall(builder("/api/sessions/" + id, "DELETE")).execute().use { response ->
             body(response, "Unable to delete chat.")
         }
     }
 
     suspend fun messages(sessionId: String): List<Msg> = withContext(Dispatchers.IO) {
-        client.newCall(builder("/api/chat/sessions/" + sessionId + "/messages")).execute().use { response ->
+        client.newCall(builder("/api/sessions/" + sessionId)).execute().use { response ->
             val array = JSONObject(body(response, "Unable to load chat messages.")).getJSONArray("messages")
             List(array.length()) { i ->
                 val item = array.getJSONObject(i)
