@@ -11,7 +11,7 @@ import { registerRoutes } from "./routes.js";
 const app=Fastify({logger:true,bodyLimit:1048576});
 await app.register(helmet);
 await app.register(cookie,{secret:config.SESSION_SECRET});
-await app.register(cors,{origin:config.FRONTEND_ORIGIN,credentials:true});
+const allowedOrigins=new Set([config.FRONTEND_ORIGIN,"https://appassets.androidplatform.net","http://localhost","http://127.0.0.1"]);\nawait app.register(cors,{origin:(origin,cb)=>{if(!origin||origin==="null"||allowedOrigins.has(origin))cb(null,true);else cb(null,false)},credentials:true});
 await app.register(rateLimit,{max:120,timeWindow:"1 minute"});
 await migrate();
 await registerAuth(app);
