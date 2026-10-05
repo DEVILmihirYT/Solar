@@ -43,6 +43,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.Switch
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -202,6 +203,10 @@ class MainActivity:ComponentActivity(){
  var loading by remember{mutableStateOf(false)}
  var error by remember{mutableStateOf<String?>(null)}
  var user by remember{mutableStateOf<AuthUser?>(null)}
+ var allowWrites by remember{mutableStateOf(false)}
+ var allowTermux by remember{mutableStateOf(false)}
+ var allowInternet by remember{mutableStateOf(true)}
+ var allowBrowser by remember{mutableStateOf(false)}
  var showCreateProject by remember{mutableStateOf(false)}
  var showCreateSession by remember{mutableStateOf(false)}
 
@@ -240,19 +245,19 @@ class MainActivity:ComponentActivity(){
   }
   Column(Modifier.fillMaxSize().padding(16.dp)){
    when(screen){
-    "Chat"->ChatScreen(api,models,projects,sessions,selectedModel,selectedProject,selectedSession,messages,input,loading,{selectedModel=it;api.selectedModelId=it},{selectedProject=it;selectedSession=null;api.currentSessionId=null;messages=emptyList();refresh()},{selectedSession=it;api.currentSessionId=it},{input=it},{
-      val question=input.trim();if(question.isBlank()||selectedModel.isBlank()||loading)return@ChatScreen
+    "Chat"->ChatScreen(api,models,projects,sessions,selectedModel,selectedProject,selectedSession,messages,input,loading,allowWrites,allowTermux,allowInternet,allowBrowser,{selectedModel=it;api.selectedModelId=it},{selectedProject=it;selectedSession=null;api.currentSessionId=null;messages=emptyList();refresh()},{selectedSession=it;api.currentSessionId=it},{input=it},{
+      val question=input.trim();if(question.isBlank()||selectedModel.isBlank()||loading)Unit else {
       input="";loading=true;error=null;messages=messages+Msg("user",question)
       scope.launch{
-       runCatching{api.run(question,selectedModel,selectedProject,selectedSession,mapOf("allowWrites" to false,"allowTermux" to false,"allowInternet" to true,"allowBrowser" to false,"allowFallback" to true))}
+       runCatching{api.run(question,selectedModel,selectedProject,selectedSession,mapOf("allowWrites" to allowWrites,"allowTermux" to allowTermux,"allowInternet" to allowInternet,"allowBrowser" to allowBrowser,"allowFallback" to true))}
        .onSuccess{(sessionId,answer)->if(selectedSession==null&&sessionId.isNotBlank()){selectedSession=sessionId;api.currentSessionId=sessionId};messages=messages+Msg("assistant",answer);refresh()}
        .onFailure{error=it.message?:"Solar request failed."};loading=false
       }
-    },{api.login(context)},{showCreateSession=true})
+    }},{api.login(context)},{showCreateSession=true})
     "Projects"->ProjectsScreen(api.authenticated,projects,{api.login(context)},{showCreateProject=true})
     "Sessions"->SessionsScreen(api.authenticated,sessions,{showCreateSession=true},{selectedSession=it;api.currentSessionId=it;screen="Chat"})
     "Models"->ModelsScreen(models,selectedModel){selectedModel=it;api.selectedModelId=it}
-    else->SettingsScreen(api,user,{api.login(context)}){scope.launch{api.logout();user=null;projects=emptyList();sessions=emptyList();messages=emptyList()}}
+    else->SettingsScreen(api,user,allowWrites,allowTermux,allowInternet,allowBrowser,{api.login(context)},{allowWrites=it},{allowTermux=it},{allowInternet=it},{allowBrowser=it}){scope.launch{api.logout();user=null;projects=emptyList();sessions=emptyList();messages=emptyList()}}
    }
    error?.let{Text(it,color=MaterialTheme.colorScheme.error,modifier=Modifier.padding(top=8.dp))}
   }
@@ -266,7 +271,7 @@ class MainActivity:ComponentActivity(){
  }
 }
 
-@Composable private fun ChatScreen(api:SolarApi,models:List<Model>,projects:List<Project>,sessions:List<Session>,selectedModel:String,selectedProject:String?,selectedSession:String?,messages:List<Msg>,input:String,loading:Boolean,onModel:(String)->Unit,onProject:(String?)->Unit,onSession:(String?)->Unit,onInput:(String)->Unit,onSend:()->Unit,onGitHub:()->Unit,onNewSession:()->Unit){
+@Composable private fun ChatScreen(api:SolarApi,models:List<Model>,projects:List<Project>,sessions:List<Session>,selectedModel:String,selectedProject:String?,selectedSession:String?,messages:List<Msg>,input:String,loading:Boolean,allowWrites:Boolean,allowTermux:Boolean,allowInternet:Boolean,allowBrowser:Boolean,onModel:(String)->Unit,onProject:(String?)->Unit,onSession:(String?)->Unit,onInput:(String)->Unit,onSend:()->Unit,onGitHub:()->Unit,onNewSession:()->Unit){
  var modelMenu by remember{mutableStateOf(false)}
  var projectMenu by remember{mutableStateOf(false)}
  var sessionMenu by remember{mutableStateOf(false)}
@@ -320,9 +325,14 @@ class MainActivity:ComponentActivity(){
  LazyColumn(verticalArrangement=Arrangement.spacedBy(10.dp)){items(models){model->Card{Row(Modifier.fillMaxWidth().padding(16.dp),verticalAlignment=Alignment.CenterVertically){Column(Modifier.weight(1f)){Text(model.name,fontWeight=FontWeight.Bold);Text(model.id,style=MaterialTheme.typography.labelSmall);if(model.desc.isNotBlank())Text(model.desc,style=MaterialTheme.typography.bodySmall,modifier=Modifier.padding(top=4.dp))};Button(onClick={onSelect(model.id)}){Text(if(selected==model.id)"Selected" else "Use")}}}}}
 }
 
-@Composable private fun SettingsScreen(api:SolarApi,user:AuthUser?,onGitHub:()->Unit,onLogout:()->Unit){
+@Composable private fun SettingsScreen(api:SolarApi,user:AuthUser?,allowWrites:Boolean,allowTermux:Boolean,allowInternet:Boolean,allowBrowser:Boolean,onGitHub:()->Unit,onWrites:(Boolean)->Unit,onTermux:(Boolean)->Unit,onInternet:(Boolean)->Unit,onBrowser:(Boolean)->Unit,onLogout:()->Unit){
  Text("Settings",style=MaterialTheme.typography.headlineSmall,fontWeight=FontWeight.Bold);Spacer(Modifier.height(10.dp))
  Card{Column(Modifier.padding(16.dp)){Text(if(user!=null)"Signed in as "+user.login else "Not connected to GitHub");Button(onClick=if(user==null)onGitHub else onLogout,modifier=Modifier.padding(top=10.dp)){Text(if(user==null)"Connect GitHub" else "Disconnect GitHub")}}}
+ Spacer(Modifier.height(12.dp));
+ PermissionRow("Allow repository writes",allowWrites,onWrites)
+ PermissionRow("Allow Termux commands",allowTermux,onTermux)
+ PermissionRow("Allow internet",allowInternet,onInternet)
+ PermissionRow("Allow browser",allowBrowser,onBrowser)
  Spacer(Modifier.height(12.dp));Text("Backend URL",fontWeight=FontWeight.Bold);OutlinedTextField(api.baseUrl,{api.baseUrl=it},singleLine=true,modifier=Modifier.fillMaxWidth());Text("Use the deployed Solar backend URL here for a physical device.",style=MaterialTheme.typography.labelSmall,modifier=Modifier.padding(top=4.dp))
 }
 
@@ -335,3 +345,5 @@ class MainActivity:ComponentActivity(){
  var title by remember{mutableStateOf("")}
  AlertDialog(onDismissRequest=onDismiss,title={Text("New chat session")},text={OutlinedTextField(title,{title=it},label={Text("Session title")},singleLine=true,placeholder={Text("e.g. Fix login bug")})},confirmButton={Button(onClick={onCreate(title.trim().ifBlank{"New chat"})}){Text("Create")}},dismissButton={TextButton(onClick=onDismiss){Text("Cancel")}})
 }
+
+@Composable private fun PermissionRow(title:String,checked:Boolean,onCheckedChange:(Boolean)->Unit){Card{Row(Modifier.fillMaxWidth().padding(horizontal=16.dp,vertical=8.dp),verticalAlignment=Alignment.CenterVertically){Text(title,Modifier.weight(1f));Switch(checked,onCheckedChange)}}}
