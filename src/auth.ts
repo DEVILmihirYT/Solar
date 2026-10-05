@@ -57,7 +57,7 @@ export async function registerAuth(app:FastifyInstance){
   const c=await pool.connect();
   try{
    await c.query("BEGIN");
-   const q=await c.query<any>("SELECT om.status,om.error,om.session_id,om.expires_at,om.consumed_at,u.github_id,u.github_login,u.github_name,u.github_avatar_url FROM oauth_mobile_requests om LEFT JOIN sessions s ON s.id=om.session_id LEFT JOIN users u ON u.id=s.user_id WHERE om.id_hash=$1 FOR UPDATE",[hash(requestId)]);
+   const q=await c.query<any>("SELECT om.status,om.error,om.session_id,om.expires_at,om.consumed_at,u.github_id,u.github_login,u.github_name,u.github_avatar_url FROM oauth_mobile_requests om LEFT JOIN sessions s ON s.id=om.session_id LEFT JOIN users u ON u.id=s.user_id WHERE om.id_hash=$1 FOR UPDATE OF om",[hash(requestId)]);
    const row=q.rows[0];
    if(!row){await c.query("COMMIT");return reply.code(404).send({error:"Login request not found"})}
    if(new Date(row.expires_at).getTime()<Date.now()&&!row.session_id){await c.query("DELETE FROM oauth_mobile_requests WHERE id_hash=$1",[hash(requestId)]);await c.query("COMMIT");return {status:"expired"}}
