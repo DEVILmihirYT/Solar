@@ -592,6 +592,21 @@ fun SolarApp(context: Context) {
         }
     }
 
+    fun selectModel(id: String) {
+        if (id.isBlank()) return
+        selectedModel = id
+        api.setSelectedModelId(id)
+        val sid = selectedSessionId ?: return
+        scope.launch {
+            runCatching { api.updateSession(sid, modelId = id) }
+                .onSuccess { updated ->
+                    sessions = sessions.map { if (it.id == updated.id) updated else it }
+                    error = null
+                }
+                .onFailure { error = it.message }
+        }
+    }
+
     fun sendMessage() {
         val text = input.trim()
         val currentSession = sessions.firstOrNull { it.id == selectedSessionId }
@@ -805,20 +820,8 @@ fun SolarApp(context: Context) {
                                                 }
                                             },
                                             onClick = {
-                                                selectedModel = model.id
-                                                api.setSelectedModelId(model.id)
+                                                selectModel(model.id)
                                                 showModelMenu = false
-                                                val sid = selectedSessionId
-                                                if (sid != null) {
-                                                    scope.launch {
-                                                        runCatching { api.updateSession(sid, modelId = model.id) }
-                                                            .onSuccess { updated ->
-                                                                sessions = sessions.map { if (it.id == updated.id) updated else it }
-                                                                error = null
-                                                            }
-                                                            .onFailure { error = it.message }
-                                                    }
-                                                }
                                             }
                                         )
                                     }
@@ -1086,10 +1089,7 @@ fun SolarApp(context: Context) {
                     LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         items(models) { model ->
                             Card(
-                                onClick = {
-                                    selectedModel = model.id
-                                    api.setSelectedModelId(model.id)
-                                },
+                                onClick = { selectModel(model.id) },
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Row(
@@ -1098,10 +1098,7 @@ fun SolarApp(context: Context) {
                                 ) {
                                     RadioButton(
                                         selected = selectedModel == model.id,
-                                        onClick = {
-                                            selectedModel = model.id
-                                            api.setSelectedModelId(model.id)
-                                        }
+                                        onClick = { selectModel(model.id) }
                                     )
                                     Spacer(Modifier.width(8.dp))
                                     Column {
