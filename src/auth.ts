@@ -15,6 +15,7 @@ const MOBILE_REDIRECT="solar://auth/callback";
 declare module "fastify" { interface FastifyRequest { authUser?: AuthUser } }
 
 const cookieOptions=(secure:boolean)=>({httpOnly:true,secure,sameSite:"lax" as const,path:"/",signed:true});
+const signedCookie=(req:FastifyRequest,name:string):string|undefined=>{const raw=req.cookies[name];if(!raw)return undefined;const result=req.unsignCookie(raw);return result.valid?result.value:undefined};
 const hashHandoff=(value:string)=>crypto.createHash("sha256").update(value).digest("hex");
 
 export async function registerAuth(app:FastifyInstance){
@@ -37,7 +38,7 @@ export async function registerAuth(app:FastifyInstance){
  });
 
  app.get("/api/auth/github/callback",async(req,reply)=>{
-  const q=req.query as {code?:string;state?:string},raw=req.cookies[OAUTH_COOKIE];
+  const q=req.query as {code?:string;state?:string},raw=signedCookie(req,OAUTH_COOKIE);
   if(!raw||!q.code||!q.state)return reply.code(400).send({error:"Invalid OAuth callback"});
   let o:{state:string;verifier:string;mobile?:boolean};
   try{o=JSON.parse(raw)}catch{return reply.code(400).send({error:"Invalid OAuth state"})}
@@ -129,7 +130,7 @@ export async function registerAuth(app:FastifyInstance){
  });
 
  app.post("/api/auth/logout",async(req,reply)=>{
-  const sid=req.cookies[SESSION_COOKIE]??bearerToken(req);
+  const sid=signedCookie(req,SESSION_COOKIE)??bearerToken(req);
   if(sid)await pool.query("DELETE FROM sessions WHERE id=$1",[sid]);
   reply.clearCookie(SESSION_COOKIE,cookieOptions(secure));
   return {ok:true};
@@ -146,7 +147,7 @@ function bearerToken(req:FastifyRequest):string|undefined{
 }
 
 export async function requireAuth(req:FastifyRequest,reply:FastifyReply){
- const sid=req.cookies[SESSION_COOKIE]??bearerToken(req);
+ const sid=signedCookie(req,SESSION_COOKIE)??bearerToken(req);
  if(!sid)return void reply.code(401).send({error:"Authentication required"});
  const q=await pool.query<any>(
   "SELECT s.user_id,u.github_id,u.github_login,u.github_name,u.github_avatar_url,ga.access_token_enc FROM sessions s JOIN users u ON u.id=s.user_id JOIN github_accounts ga ON ga.user_id=u.id WHERE s.id=$1 AND s.expires_at>now()",
