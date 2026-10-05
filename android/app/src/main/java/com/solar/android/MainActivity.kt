@@ -1005,7 +1005,7 @@ fun SolarApp(context: Context) {
                                 onClick = { startGithubLogin() },
                                 enabled = !authBusy
                             ) {
-                                Icon(Icons.Default.GitHub, null)
+                                Icon(Icons.Default.Code, null)
                                 Spacer(Modifier.width(6.dp))
                                 Text(if (user == null) "Connect GitHub" else "Reconnect GitHub")
                             }
