@@ -28,7 +28,7 @@ jobs:
         id: version
         working-directory: android
         shell: bash
-        run: echo "name=$(sed -n 's/.*versionName = \"\\([^\"]*\\)\".*/\\1/p' app/build.gradle.kts)" >> "$GITHUB_OUTPUT"
+        run: echo "name=$(grep -E 'versionName = "[^"]+"' app/build.gradle.kts | sed -E 's/.*"([^"]+)".*/\1/')" >> "$GITHUB_OUTPUT"
       - name: Build release APKs (32-bit + 64-bit ARM + universal)
         working-directory: android
         env:
