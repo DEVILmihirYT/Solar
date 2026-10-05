@@ -16,8 +16,8 @@ android {
         applicationId = "com.solar.android"
         minSdk = 26
         targetSdk = 35
-        versionCode = 7
-        versionName = "0.4.5"
+        versionCode = 8
+        versionName = "0.4.6"
         val backendUrl = System.getenv("SOLAR_BACKEND_URL")?.trim().orEmpty()
         buildConfigField("String", "DEFAULT_BACKEND_URL", "\"$backendUrl\"")
 
