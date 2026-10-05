@@ -84,6 +84,10 @@ export async function registerRoutes(app:FastifyInstance){
     WHERE s.id=$1 AND s.user_id=$2`,[sid,u.id]);
   const session=meta.rows[0];if(!session)return reply.code(404).send({error:"Session not found"});
   const selectedModel=p.data.modelId??session.model_id??undefined;
+  const historyQ=await pool.query<{role:"user"|"assistant";content:string}>(
+    "SELECT role,content FROM chat_messages WHERE session_id=$1 AND role IN ('user','assistant') ORDER BY created_at DESC LIMIT 40",[sid]
+  );
+  const history=historyQ.rows.reverse();
   await pool.query("INSERT INTO chat_messages(session_id,role,content,model_id) VALUES($1,'user',$2,$3)",[sid,p.data.message,selectedModel??null]);
   await pool.query("UPDATE chat_sessions SET model_id=COALESCE($2,model_id),updated_at=now() WHERE id=$1",[sid,selectedModel??null]);
 
@@ -92,7 +96,7 @@ export async function registerRoutes(app:FastifyInstance){
     session.repo_owner&&session.repo_name?`GitHub repository: ${session.repo_owner}/${session.repo_name} (branch: ${session.branch??"main"})`:"No GitHub repository linked."
   ].join("\n"):"No project is selected for this chat.";
   try{
-   const result=await runAgent(u,p.data.message,{...(selectedModel?{modelId:selectedModel}:{}),allowWrites:p.data.allowWrites,allowTermux:p.data.allowTermux,allowInternet:p.data.allowInternet,allowBrowser:p.data.allowBrowser,allowFallback:p.data.allowFallback,projectContext});
+   const result=await runAgent(u,p.data.message,{...(selectedModel?{modelId:selectedModel}:{}),allowWrites:p.data.allowWrites,allowTermux:p.data.allowTermux,allowInternet:p.data.allowInternet,allowBrowser:p.data.allowBrowser,allowFallback:p.data.allowFallback,projectContext,history});
    await pool.query("INSERT INTO chat_messages(session_id,role,content,model_id) VALUES($1,'assistant',$2,$3)",[sid,result.message,result.modelId]);
    await pool.query("UPDATE chat_sessions SET updated_at=now() WHERE id=$1",[sid]);
    return {sessionId:sid,...result};
