@@ -166,7 +166,7 @@ class SolarApi(context:Context){
  }
  suspend fun sessionMessages(sessionId:String):List<Msg>{
   val array=JSONObject(execute("/api/sessions/"+Uri.encode(sessionId))).getJSONArray("messages")
-  return List(array.length()){i->{val x=array.getJSONObject(i);Msg(x.getString("role"),x.getString("content"))}}
+  return List(array.length()) { i ->\n   val x = array.getJSONObject(i)\n   Msg(x.getString("role"), x.getString("content"))\n  }
  }
  suspend fun run(message:String,model:String,projectId:String?,sessionId:String?,flags:Map<String,Boolean>):Pair<String,String>{
   val payload=JSONObject().put("message",message).put("modelId",model).put("projectId",projectId?:JSONObject.NULL).put("sessionId",sessionId?:JSONObject.NULL).put("stream",false)
@@ -176,7 +176,7 @@ class SolarApi(context:Context){
  }
  private fun extractError(body:String,fallback:String):String=runCatching{JSONObject(body).optString("error")}.getOrNull()?.takeIf{it.isNotBlank()}?:body.takeIf{it.isNotBlank()}?:fallback
 }
-private fun JSONArray.toStringList():List<String>=List(length()){optString(it)}
+private fun JSONArray.toStringList(): List<String> = List(length()) { optString(it) }
 
 @Composable fun SolarTheme(content:@Composable()->Unit){MaterialTheme(colorScheme=darkColorScheme(background=SolarBg,surface=SolarCard,primary=SolarAccent,onPrimary=Color.Black),content=content)}
 
