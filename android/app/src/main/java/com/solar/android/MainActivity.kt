@@ -1,6 +1,7 @@
 package com.solar.android
 
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -305,6 +306,28 @@ class SolarApi(context: Context) {
         }
     }
 
+    suspend fun updateSession(id: String, title: String? = null, modelId: String? = null, projectId: String? = null): ChatSession = withContext(Dispatchers.IO) {
+        val json = JSONObject()
+        title?.let { json.put("title", it) }
+        modelId?.let { json.put("modelId", it) }
+        projectId?.let { json.put("projectId", it) }
+        client.newCall(builder("/api/chat/sessions/" + id, "PATCH", json.toString())).execute().use { response ->
+            val item = JSONObject(body(response, "Unable to update chat."))
+            ChatSession(
+                id = item.optString("id"),
+                title = item.optString("title", "New chat"),
+                projectId = item.optString("project_id").ifBlank { null },
+                modelId = item.optString("model_id").ifBlank { null }
+            )
+        }
+    }
+
+    suspend fun health() = withContext(Dispatchers.IO) {
+        client.newCall(builder("/api/health")).execute().use { response ->
+            body(response, "Backend is not reachable.")
+        }
+    }
+
     suspend fun deleteSession(id: String) = withContext(Dispatchers.IO) {
         client.newCall(builder("/api/chat/sessions/" + id, "DELETE")).execute().use { response ->
             body(response, "Unable to delete chat.")
@@ -393,8 +416,12 @@ class SolarApi(context: Context) {
     }
 
     fun openExternal(context: Context, url: String) {
-        CustomTabsIntent.Builder().setShowTitle(true).build()
-            .launchUrl(context, Uri.parse(url))
+        val uri = Uri.parse(url)
+        runCatching {
+            CustomTabsIntent.Builder().setShowTitle(true).build().launchUrl(context, uri)
+        }.recoverCatching {
+            context.startActivity(Intent(Intent.ACTION_VIEW, uri))
+        }.getOrThrow()
     }
 
     private fun jsonStringList(array: JSONArray?): List<String> {
@@ -458,8 +485,13 @@ fun SolarApp(context: Context) {
     var allowBrowser by remember { mutableStateOf(false) }
 
     var showProjectDialog by remember { mutableStateOf(false) }
+    var showNewChatDialog by remember { mutableStateOf(false) }
     var showDeleteSessionDialog by remember { mutableStateOf<ChatSession?>(null) }
     var showModelMenu by remember { mutableStateOf(false) }
+    var showProjectMenu by remember { mutableStateOf(false) }
+    var showSessionMenu by remember { mutableStateOf(false) }
+    var newChatProjectId by remember { mutableStateOf<String?>(null) }
+    var newChatModelId by remember { mutableStateOf(selectedModel) }
     var backendDraft by remember { mutableStateOf(api.baseUrl) }
 
     suspend fun refreshWorkspace() {
@@ -484,6 +516,11 @@ fun SolarApp(context: Context) {
         runCatching { api.sessions() }.onSuccess { loaded ->
             sessions = loaded
             if (selectedSessionId == null && loaded.isNotEmpty()) selectedSessionId = loaded.first().id
+            val active = loaded.firstOrNull { it.id == selectedSessionId }
+            active?.modelId?.takeIf { it.isNotBlank() }?.let {
+                selectedModel = it
+                api.setSelectedModelId(it)
+            }
         }
         runCatching { api.repositories() }.onSuccess { repos = it }
     }
@@ -555,26 +592,6 @@ fun SolarApp(context: Context) {
         }
     }
 
-    fun startNewChat() {
-        scope.launch {
-            if (api.authToken.isNullOrBlank()) {
-                error = "Connect GitHub before creating synced chats."
-                screen = "Settings"
-                return@launch
-            }
-            val currentProject = projects.firstOrNull()
-            runCatching { api.createSession(currentProject?.id, selectedModel.ifBlank { null }) }
-                .onSuccess {
-                    sessions = listOf(it) + sessions
-                    selectedSessionId = it.id
-                    messages = emptyList()
-                    screen = "Chats"
-                    error = null
-                }
-                .onFailure { error = it.message }
-        }
-    }
-
     fun sendMessage() {
         val text = input.trim()
         val currentSession = sessions.firstOrNull { it.id == selectedSessionId }
@@ -598,7 +615,8 @@ fun SolarApp(context: Context) {
                 messages = emptyList()
             }
             val projectId = session!!.projectId
-            val displayModel = selectedModel.ifBlank { models.firstOrNull()?.id.orEmpty() }
+            val displayModel = session!!.modelId?.takeIf { it.isNotBlank() }
+            ?: selectedModel.ifBlank { models.firstOrNull()?.id.orEmpty() }
             if (displayModel.isBlank()) {
                 error = "No AI model is available."
                 screen = "Models"
@@ -719,137 +737,248 @@ fun SolarApp(context: Context) {
 
             when (screen) {
                 "Chats" -> {
-                    Row(modifier = Modifier.fillMaxWidth()) {
-                        Column(
-                            modifier = Modifier
-                                .width(190.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                    val currentSession = sessions.firstOrNull { it.id == selectedSessionId }
+                    val currentProject = projects.firstOrNull { it.id == currentSession?.projectId }
+                    val activeModel = models.firstOrNull { it.id == (currentSession?.modelId ?: selectedModel) }
+
+                    Column(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Button(
-                                onClick = { startNewChat() },
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
+                            Column(Modifier.weight(1f)) {
+                                Text("Chats", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                                Text(
+                                    if (currentSession == null) "Start a new Solar session" else currentSession.title,
+                                    style = MaterialTheme.typography.labelSmall
+                                )
+                            }
+                            Button(onClick = {
+                                if (api.authToken.isNullOrBlank()) {
+                                    screen = "Settings"
+                                    error = "Connect GitHub before creating synced chats."
+                                } else {
+                                    newChatProjectId = currentProject?.id
+                                    newChatModelId = activeModel?.id ?: selectedModel
+                                    showNewChatDialog = true
+                                }
+                            }) {
                                 Icon(Icons.Default.Add, null)
                                 Spacer(Modifier.width(4.dp))
                                 Text("New chat")
                             }
+                        }
 
-                            LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                items(sessions) { session ->
-                                    Card(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        shape = RoundedCornerShape(12.dp),
-                                        onClick = { selectedSessionId = session.id }
-                                    ) {
-                                        Row(
-                                            Modifier.padding(8.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Column(Modifier.weight(1f)) {
-                                                Text(
-                                                    session.title,
-                                                    fontWeight = if (session.id == selectedSessionId) FontWeight.Bold else FontWeight.Normal,
-                                                    maxLines = 2
-                                                )
-                                                Text(session.modelId ?: "Auto", style = MaterialTheme.typography.labelSmall)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Box(Modifier.weight(1f)) {
+                                OutlinedButton(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    onClick = { showModelMenu = true }
+                                ) {
+                                    Text(activeModel?.name ?: "Choose model", maxLines = 1)
+                                }
+                                DropdownMenu(
+                                    expanded = showModelMenu,
+                                    onDismissRequest = { showModelMenu = false }
+                                ) {
+                                    models.forEach { model ->
+                                        DropdownMenuItem(
+                                            text = {
+                                                Column {
+                                                    Text(model.name, fontWeight = if (model.id == activeModel?.id) FontWeight.Bold else FontWeight.Normal)
+                                                    Text(
+                                                        model.provider,
+                                                        style = MaterialTheme.typography.labelSmall
+                                                    )
+                                                }
+                                            },
+                                            onClick = {
+                                                selectedModel = model.id
+                                                api.setSelectedModelId(model.id)
+                                                showModelMenu = false
+                                                val sid = selectedSessionId
+                                                if (sid != null) {
+                                                    scope.launch {
+                                                        runCatching { api.updateSession(sid, modelId = model.id) }
+                                                            .onSuccess { updated ->
+                                                                sessions = sessions.map { if (it.id == updated.id) updated else it }
+                                                                error = null
+                                                            }
+                                                            .onFailure { error = it.message }
+                                                    }
+                                                }
                                             }
-                                            TextButton(onClick = { showDeleteSessionDialog = session }) { Text("Delete") }
-                                        }
+                                        )
                                     }
                                 }
                             }
-                        }
 
-                        Spacer(Modifier.width(12.dp))
-
-                        Column(modifier = Modifier.weight(1f)) {
-                            val currentSession = sessions.firstOrNull { it.id == selectedSessionId }
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(currentSession?.title ?: "New chat", fontWeight = FontWeight.Bold)
-                                    Text(
-                                        projects.firstOrNull { it.id == currentSession?.projectId }?.name ?: "No project",
-                                        style = MaterialTheme.typography.labelSmall
-                                    )
+                            Box(Modifier.weight(1f)) {
+                                OutlinedButton(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    onClick = { showProjectMenu = true }
+                                ) {
+                                    Text(currentProject?.name ?: "No project", maxLines = 1)
                                 }
+                                DropdownMenu(
+                                    expanded = showProjectMenu,
+                                    onDismissRequest = { showProjectMenu = false }
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text("No project") },
+                                        onClick = {
+                                            showProjectMenu = false
+                                            selectedSessionId?.let { sid ->
+                                                scope.launch {
+                                                    runCatching { api.updateSession(sid, projectId = "") }
+                                                }
+                                            }
+                                        }
+                                    )
+                                    projects.forEach { project ->
+                                        DropdownMenuItem(
+                                            text = { Text(project.name) },
+                                            onClick = {
+                                                showProjectMenu = false
+                                                selectedSessionId?.let { sid ->
+                                                    scope.launch {
+                                                        runCatching {
+                                                            api.updateSession(sid, projectId = project.id)
+                                                        }.onSuccess { updated ->
+                                                            sessions = sessions.map { if (it.id == updated.id) updated else it }
+                                                            error = null
+                                                        }.onFailure { error = it.message }
+                                                    }
+                                                }
+                                            }
+                                        )
+                                    }
+                                }
+                            }
 
-                                Box {
-                                    OutlinedButton(onClick = { showModelMenu = true }) {
-                                        Text(models.firstOrNull { it.id == selectedModel }?.name ?: "Choose model")
+                            if (sessions.isNotEmpty()) {
+                                Box(Modifier.weight(1f)) {
+                                    OutlinedButton(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        onClick = { showSessionMenu = true }
+                                    ) {
+                                        Text(currentSession?.title ?: "Choose chat", maxLines = 1)
                                     }
                                     DropdownMenu(
-                                        expanded = showModelMenu,
-                                        onDismissRequest = { showModelMenu = false }
+                                        expanded = showSessionMenu,
+                                        onDismissRequest = { showSessionMenu = false }
                                     ) {
-                                        models.forEach { model ->
+                                        sessions.forEach { session ->
                                             DropdownMenuItem(
-                                                text = { Text(model.name) },
-                                                onClick = {
-                                                    selectedModel = model.id
-                                                    api.setSelectedModelId(model.id)
-                                                    showModelMenu = false
-                                                    currentSession?.let { session ->
-                                                        scope.launch {
-                                                            runCatching {
-                                                                api.createSession(session.projectId, model.id)
-                                                            }
-                                                        }
+                                                text = {
+                                                    Column {
+                                                        Text(session.title, fontWeight = if (session.id == selectedSessionId) FontWeight.Bold else FontWeight.Normal)
+                                                        Text(
+                                                            session.modelId ?: "Auto",
+                                                            style = MaterialTheme.typography.labelSmall
+                                                        )
                                                     }
+                                                },
+                                                onClick = {
+                                                    selectedSessionId = session.id
+                                                    selectedModel = session.modelId ?: selectedModel
+                                                    api.setSelectedModelId(selectedModel)
+                                                    showSessionMenu = false
                                                 }
                                             )
                                         }
                                     }
                                 }
                             }
+                        }
 
-                            Divider(Modifier.padding(vertical = 8.dp))
-
-                            LazyColumn(
-                                modifier = Modifier.weight(1f).fillMaxWidth(),
-                                contentPadding = PaddingValues(vertical = 8.dp),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                        if (currentSession != null) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                items(messages) { message ->
-                                    Card(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        shape = RoundedCornerShape(14.dp)
-                                    ) {
-                                        Column(Modifier.padding(12.dp)) {
-                                            Text(
-                                                if (message.role == "user") "You" else "Solar",
-                                                style = MaterialTheme.typography.labelSmall,
-                                                fontWeight = FontWeight.Bold
-                                            )
-                                            Spacer(Modifier.height(4.dp))
-                                            Text(message.text)
+                                Column(Modifier.weight(1f)) {
+                                    Text(currentSession.title, fontWeight = FontWeight.Bold)
+                                    Text(
+                                        buildString {
+                                            append(activeModel?.name ?: "Auto")
+                                            currentProject?.name?.let { append(" • "); append(it) }
+                                        },
+                                        style = MaterialTheme.typography.labelSmall
+                                    )
+                                }
+                                TextButton(onClick = { showDeleteSessionDialog = currentSession }) {
+                                    Text("Delete")
+                                }
+                            }
+                        } else {
+                            Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp)) {
+                                Column(Modifier.padding(18.dp)) {
+                                    Text("No chat session yet", fontWeight = FontWeight.Bold)
+                                    Spacer(Modifier.height(4.dp))
+                                    Text("Create a session, pick a model, and start working with Solar.")
+                                    Spacer(Modifier.height(10.dp))
+                                    OutlinedButton(onClick = {
+                                        if (api.authToken.isNullOrBlank()) {
+                                            screen = "Settings"
+                                            error = "Connect GitHub before creating synced chats."
+                                        } else {
+                                            newChatProjectId = null
+                                            newChatModelId = selectedModel
+                                            showNewChatDialog = true
                                         }
+                                    }) { Text("Create first chat") }
+                                }
+                            }
+                        }
+
+                        LazyColumn(
+                            modifier = Modifier.weight(1f).fillMaxWidth(),
+                            contentPadding = PaddingValues(vertical = 4.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            items(messages) { message ->
+                                Card(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(16.dp)
+                                ) {
+                                    Column(Modifier.padding(12.dp)) {
+                                        Text(
+                                            if (message.role == "user") "You" else "Solar",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Spacer(Modifier.height(4.dp))
+                                        Text(message.text)
                                     }
                                 }
                             }
+                        }
 
-                            if (loading) {
-                                LinearProgressIndicator(Modifier.fillMaxWidth())
-                                Spacer(Modifier.height(6.dp))
-                            }
+                        if (loading) {
+                            LinearProgressIndicator(Modifier.fillMaxWidth())
+                        }
 
-                            Row(verticalAlignment = Alignment.Bottom) {
-                                OutlinedTextField(
-                                    value = input,
-                                    onValueChange = { input = it },
-                                    modifier = Modifier.weight(1f),
-                                    placeholder = { Text("Ask Solar to code, explain, debug...") },
-                                    maxLines = 6
-                                )
-                                Spacer(Modifier.width(8.dp))
-                                FilledIconButton(
-                                    enabled = !loading && input.isNotBlank(),
-                                    onClick = { sendMessage() }
-                                ) {
-                                    Icon(Icons.Default.Send, "Send")
-                                }
+                        Row(verticalAlignment = Alignment.Bottom, modifier = Modifier.fillMaxWidth()) {
+                            OutlinedTextField(
+                                value = input,
+                                onValueChange = { input = it },
+                                modifier = Modifier.weight(1f),
+                                placeholder = { Text("Ask Solar to code, explain, debug...") },
+                                maxLines = 5
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            FilledIconButton(
+                                enabled = !loading && input.isNotBlank() && currentSession != null,
+                                onClick = { sendMessage() }
+                            ) {
+                                Icon(Icons.Default.Send, "Send")
                             }
                         }
                     }
@@ -1058,6 +1187,32 @@ fun SolarApp(context: Context) {
         }
     }
 
+    if (showNewChatDialog) {
+        NewChatDialog(
+            projects = projects,
+            models = models,
+            initialProjectId = newChatProjectId,
+            initialModelId = newChatModelId,
+            onDismiss = { showNewChatDialog = false },
+            onCreate = { projectId, modelId ->
+                scope.launch {
+                    runCatching { api.createSession(projectId, modelId.ifBlank { null }) }
+                        .onSuccess {
+                            sessions = listOf(it) + sessions
+                            selectedSessionId = it.id
+                            selectedModel = it.modelId ?: selectedModel
+                            api.setSelectedModelId(selectedModel)
+                            messages = emptyList()
+                            showNewChatDialog = false
+                            screen = "Chats"
+                            error = null
+                        }
+                        .onFailure { error = it.message }
+                }
+            }
+        )
+    }
+
     if (showProjectDialog) {
         ProjectDialog(
             onDismiss = { showProjectDialog = false },
@@ -1099,6 +1254,90 @@ fun SolarApp(context: Context) {
             dismissButton = { TextButton(onClick = { showDeleteSessionDialog = null }) { Text("Cancel") } }
         )
     }
+}
+
+@Composable
+private fun NewChatDialog(
+    projects: List<Project>,
+    models: List<Model>,
+    initialProjectId: String?,
+    initialModelId: String,
+    onDismiss: () -> Unit,
+    onCreate: (String?, String) -> Unit
+) {
+    var projectId by remember { mutableStateOf(initialProjectId) }
+    var modelId by remember { mutableStateOf(initialModelId) }
+    var showProjectPicker by remember { mutableStateOf(false) }
+    var showModelPicker by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("New chat") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("Choose the workspace and model for this session.")
+                Box {
+                    OutlinedButton(
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = { showProjectPicker = true }
+                    ) {
+                        Text(projects.firstOrNull { it.id == projectId }?.name ?: "No project")
+                    }
+                    DropdownMenu(
+                        expanded = showProjectPicker,
+                        onDismissRequest = { showProjectPicker = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("No project") },
+                            onClick = {
+                                projectId = null
+                                showProjectPicker = false
+                            }
+                        )
+                        projects.forEach { project ->
+                            DropdownMenuItem(
+                                text = { Text(project.name) },
+                                onClick = {
+                                    projectId = project.id
+                                    showProjectPicker = false
+                                }
+                            )
+                        }
+                    }
+                }
+                Box {
+                    OutlinedButton(
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = { showModelPicker = true },
+                        enabled = models.isNotEmpty()
+                    ) {
+                        Text(models.firstOrNull { it.id == modelId }?.name ?: "Auto")
+                    }
+                    DropdownMenu(
+                        expanded = showModelPicker,
+                        onDismissRequest = { showModelPicker = false }
+                    ) {
+                        models.forEach { model ->
+                            DropdownMenuItem(
+                                text = { Text(model.name) },
+                                onClick = {
+                                    modelId = model.id
+                                    showModelPicker = false
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = modelId.isNotBlank(),
+                onClick = { onCreate(projectId, modelId) }
+            ) { Text("Create chat") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
 }
 
 @Composable
