@@ -137,7 +137,10 @@ class SolarApi(context: Context) {
     private val prefs = context.getSharedPreferences("solar", Context.MODE_PRIVATE)
 
     var baseUrl: String
-        get() = prefs.getString("base", "http://10.0.2.2:8080")!!.trimEnd('/')
+        get() = prefs.getString(
+            "base",
+            BuildConfig.DEFAULT_BACKEND_URL.ifBlank { "http://10.0.2.2:8080" }
+        )!!.trimEnd('/')
         set(value) {
             prefs.edit().putString("base", value.trim().trimEnd('/')).apply()
         }
