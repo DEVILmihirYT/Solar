@@ -189,9 +189,9 @@ class SolarApi(context: Context) {
             Project(
                 id = p.optString("id"),
                 name = p.optString("name"),
-                repoOwner = p.optString("repo_owner").takeIf { it.isNotBlank() },
-                repoName = p.optString("repo_name").takeIf { it.isNotBlank() },
-                branch = p.optString("branch", "main")
+                repoOwner = p.optString("githubOwner").takeIf { it.isNotBlank() } ?: p.optString("repo_owner").takeIf { it.isNotBlank() },
+                repoName = p.optString("githubRepo").takeIf { it.isNotBlank() } ?: p.optString("repo_name").takeIf { it.isNotBlank() },
+                branch = p.optString("githubRef").takeIf { it.isNotBlank() } ?: p.optString("branch", "main")
             )
         }
     }
@@ -204,9 +204,9 @@ class SolarApi(context: Context) {
     ): Project {
         val payload = JSONObject()
             .put("name", name)
-            .put("repoOwner", repoOwner)
-            .put("repoName", repoName)
-            .put("branch", branch)
+            .put("githubOwner", repoOwner)
+            .put("githubRepo", repoName)
+            .put("githubRef", branch)
         val p = JSONObject(call(request("/api/projects", "POST", payload.toString())))
             .getJSONObject("project")
         return Project(
@@ -245,8 +245,8 @@ class SolarApi(context: Context) {
             ChatSession(
                 id = s.optString("id"),
                 title = s.optString("title", "New chat"),
-                modelId = s.optString("model_id").takeIf { it.isNotBlank() },
-                projectId = s.optString("project_id").takeIf { it.isNotBlank() },
+                modelId = s.optString("modelId").takeIf { it.isNotBlank() } ?: s.optString("model_id").takeIf { it.isNotBlank() },
+                projectId = s.optString("projectId").takeIf { it.isNotBlank() } ?: s.optString("project_id").takeIf { it.isNotBlank() },
                 projectName = s.optString("project_name").takeIf { it.isNotBlank() }
             )
         }
@@ -273,7 +273,7 @@ class SolarApi(context: Context) {
     }
 
     suspend fun messages(sessionId: String): List<Msg> {
-        val json = JSONObject(call(request("/api/sessions/" + Uri.encode(sessionId) + "/messages")))
+        val json = JSONObject(call(request("/api/sessions/" + Uri.encode(sessionId))))
         val array = json.getJSONArray("messages")
         return List(array.length()) { i ->
             val m = array.getJSONObject(i)
@@ -300,9 +300,9 @@ class SolarApi(context: Context) {
             .put("allowFallback", true)
             .put("stream", false)
         val json = JSONObject(call(request(
-            "/api/sessions/" + Uri.encode(sessionId) + "/messages",
+            "/api/agent/run",
             "POST",
-            payload.toString()
+            payload.put("sessionId", sessionId).toString()
         )))
         return json.optString(
             "message",
@@ -313,7 +313,7 @@ class SolarApi(context: Context) {
     suspend fun exchangeOAuthCode(code: String) {
         val payload = JSONObject().put("code", code)
         val json = JSONObject(call(request("/api/auth/mobile/exchange", "POST", payload.toString(), auth = false)))
-        authToken = json.optString("accessToken")
+        authToken = json.optString("sessionToken", json.optString("accessToken"))
         if (authToken.isBlank()) throw Exception("GitHub login succeeded but no app token was returned.")
     }
 
@@ -321,7 +321,7 @@ class SolarApi(context: Context) {
         CustomTabsIntent.Builder()
             .setShowTitle(true)
             .build()
-            .launchUrl(context, Uri.parse(baseUrl + "/api/auth/github?mobile=1"))
+            .launchUrl(context, Uri.parse(baseUrl + "/api/auth/github?platform=android"))
     }
 
     suspend fun logout() {
