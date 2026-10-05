@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -27,7 +26,6 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.GitHub
 import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Send
@@ -194,7 +192,7 @@ class SolarApi(context: Context) {
         prefs.edit().putString("selected_model", id).apply()
     }
 
-    private fun builder(path: String, method: String = "GET", body: String? = null): Request.Builder {
+    private fun builder(path: String, method: String = "GET", body: String? = null): Request {
         val b = Request.Builder().url(baseUrl + path)
         if (!authToken.isNullOrBlank()) b.header("Authorization", "Bearer " + authToken)
         if (body != null) {
@@ -203,7 +201,7 @@ class SolarApi(context: Context) {
         } else if (method != "GET") {
             b.method(method, null)
         }
-        return b
+        return b.build()
     }
 
     private fun body(response: okhttp3.Response, fallback: String): String {
@@ -516,7 +514,7 @@ fun SolarApp(context: Context) {
                         val loggedInUser = User(
                             id = item?.optString("id").orEmpty(),
                             login = item?.optString("login").orEmpty(),
-                            name = item?.optString("name").ifBlank { null }
+                            name = item?.optString("name")?.takeIf { it.isNotBlank() }
                         )
                         if (token.isNotBlank() && loggedInUser.login.isNotBlank()) {
                             api.saveAuth(token, loggedInUser)
@@ -696,7 +694,7 @@ fun SolarApp(context: Context) {
                     CircularProgressIndicator(modifier = Modifier.width(24.dp).height(24.dp), strokeWidth = 2.dp)
                 } else if (user == null) {
                     Button(onClick = { startGithubLogin() }) {
-                        Icon(Icons.Default.GitHub, null)
+                        Icon(Icons.Default.Code, null)
                         Spacer(Modifier.width(6.dp))
                         Text("Connect")
                     }
