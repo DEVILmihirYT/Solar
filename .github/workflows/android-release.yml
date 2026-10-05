@@ -35,6 +35,8 @@ jobs:
 
       - name: Build release APK (32-bit + 64-bit ARM)
         working-directory: android
+        env:
+          SOLAR_BACKEND_URL: ${{ vars.SOLAR_BACKEND_URL }}
         run: gradle :app:assembleRelease --no-daemon --stacktrace -Dkotlin.compiler.execution.strategy=in-process
 
       - name: Verify APK exists
