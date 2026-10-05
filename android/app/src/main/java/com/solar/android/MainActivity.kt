@@ -230,7 +230,7 @@ class SolarApi(context: Context) {
             val parts = full.split("/", limit = 2)
             GithubRepo(
                 owner = parts.getOrNull(0).orEmpty(),
-                name = parts.getOrNull(1).orElse(repo.optString("name")),
+                name = parts.getOrNull(1) ?: repo.optString("name"),
                 fullName = full,
                 defaultBranch = repo.optString("default_branch", "main")
             )
