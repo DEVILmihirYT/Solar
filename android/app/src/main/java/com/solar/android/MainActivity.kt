@@ -71,7 +71,9 @@ private val SolarAccent = Color(0xFF8BFF6A)
 data class Model(
     val id: String,
     val name: String,
-    val desc: String
+    val desc: String,
+    val provider: String,
+    val capabilities: List<String>
 )
 
 data class Msg(
@@ -120,8 +122,22 @@ class SolarApi(context: Context) {
                 val item = array.getJSONObject(index)
                 Model(
                     id = item.optString("id"),
-                    name = item.optString("name"),
-                    desc = item.optString("description")
+                    name = item.optString("displayName", item.optString("name", item.optString("id"))),
+                    desc = item.optString("description").ifBlank {
+                        buildString {
+                            append(item.optString("provider"))
+                            val caps = item.optJSONArray("capabilities")
+                            if (caps != null && caps.length() > 0) {
+                                append(" • ")
+                                append((0 until caps.length()).joinToString(", ") { caps.optString(it) })
+                            }
+                        }
+                    },
+                    provider = item.optString("provider"),
+                    capabilities = buildList {
+                        val caps = item.optJSONArray("capabilities")
+                        if (caps != null) for (i in 0 until caps.length()) add(caps.optString(i))
+                    }
                 )
             }
         }
@@ -157,10 +173,13 @@ class SolarApi(context: Context) {
 
             val json = JSONObject(body)
             json.optString(
-                "answer",
+                "message",
                 json.optString(
-                    "response",
-                    json.optString("output", "No response returned.")
+                    "answer",
+                    json.optString(
+                        "response",
+                        json.optString("output", "No response returned.")
+                    )
                 )
             )
         }
