@@ -1,26 +1,45 @@
 name: Solar Android Release
+
 on:
   workflow_dispatch:
   push:
-    paths: ["android/**", ".github/workflows/android-release.yml"]
+    paths:
+      - "android/**"
+      - ".github/workflows/android-release.yml"
+
 permissions:
   contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
+
       - name: Build release APK (32-bit + 64-bit ARM)
         working-directory: android
         run: gradle :app:assembleRelease --no-daemon
-      - name: Verify APK ABIs
+
+      - name: Verify APK exists and ABIs
         working-directory: android
         run: |
+          test -f app/build/outputs/apk/release/app-release.apk
           unzip -l app/build/outputs/apk/release/app-release.apk | grep -E 'lib/(armeabi-v7a|arm64-v8a)/'
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: solar-android-v0.1.1
+          path: android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
