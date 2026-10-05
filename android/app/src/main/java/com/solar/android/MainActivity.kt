@@ -1,7 +1,6 @@
 package com.solar.android
 
 import android.content.Context
-import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -16,34 +15,44 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Chat
+import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.List as ListIcon
+import androidx.compose.material.icons.filled.GitHub
+import androidx.compose.material.icons.filled.Logout
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Divider
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationRail
-import androidx.compose.material3.NavigationRailItem
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Switch
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.Switch
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -57,15 +66,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.HttpUrl
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
@@ -74,279 +85,1072 @@ private val SolarBg = Color(0xFF0B0F14)
 private val SolarCard = Color(0xFF151B23)
 private val SolarAccent = Color(0xFF8BFF6A)
 
-data class Model(val id:String,val name:String,val desc:String,val provider:String,val capabilities:List<String>)
-data class Project(val id:String,val name:String,val description:String,val githubOwner:String?,val githubRepo:String?,val githubRef:String?)
-data class Session(val id:String,val projectId:String?,val title:String,val modelId:String?)
-data class Msg(val role:String,val text:String)
-data class AuthUser(val login:String,val name:String?)
+data class Model(
+    val id: String,
+    val name: String,
+    val desc: String,
+    val provider: String,
+    val capabilities: List<String>
+)
 
-class SolarApi(context:Context){
- private val prefs=context.getSharedPreferences("solar",Context.MODE_PRIVATE)
- var baseUrl:String
-  get()=prefs.getString("base","http://10.0.2.2:8080")!!.trimEnd('/')
-  set(value){prefs.edit().putString("base",value.trimEnd('/')).apply()}
- private var sessionToken:String?
-  get()=prefs.getString("session_token",null)
-  set(value){prefs.edit().apply{if(value.isNullOrBlank())remove("session_token")else putString("session_token",value)}.apply()}
- var selectedModelId:String
-  get()=prefs.getString("selected_model","")?:""
-  set(value){prefs.edit().putString("selected_model",value).apply()}
- var currentSessionId:String?
-  get()=prefs.getString("current_session",null)
-  set(value){prefs.edit().apply{if(value.isNullOrBlank())remove("current_session")else putString("current_session",value)}.apply()}
- val authenticated:Boolean get()=!sessionToken.isNullOrBlank()
+data class Msg(
+    val id: String,
+    val role: String,
+    val text: String,
+    val modelId: String?
+)
 
- private val cookies=object:CookieJar{
-  private val map=mutableMapOf<String,List<Cookie>>()
-  override fun loadForRequest(url:HttpUrl):List<Cookie> = map[url.host].orEmpty()
-  override fun saveFromResponse(url:HttpUrl,cookies:List<Cookie>){map[url.host]=cookies}
- }
- private val client=OkHttpClient.Builder().cookieJar(cookies).build()
+data class Project(
+    val id: String,
+    val name: String,
+    val description: String,
+    val githubOwner: String?,
+    val githubRepo: String?,
+    val githubRef: String
+)
 
- private fun request(path:String,method:String="GET",body:String?=null):Request{
-  val b=Request.Builder().url(baseUrl+path)
-  sessionToken?.let{b.addHeader("Authorization","Bearer "+it)}
-  if(body!=null)b.method(method,body.toRequestBody("application/json".toMediaType()))else b.method(method,null)
-  return b.build()
- }
- private suspend fun execute(path:String,method:String="GET",body:String?=null):String=withContext(Dispatchers.IO){
-  client.newCall(request(path,method,body)).execute().use{response->
-   val text=response.body?.string().orEmpty()
-   if(!response.isSuccessful)throw Exception(extractError(text,"Request failed."))
-   text
-  }
- }
- suspend fun models():List<Model>{
-  val array=JSONObject(execute("/api/models")).getJSONArray("models")
-  return List(array.length()){i->
-   val item=array.getJSONObject(i)
-   Model(item.optString("id"),item.optString("displayName",item.optString("id")),item.optString("description").ifBlank{item.optString("provider")},item.optString("provider"),item.optJSONArray("capabilities")?.toStringList().orEmpty())
-  }
- }
- suspend fun me():AuthUser{
-  val item=JSONObject(execute("/api/auth/me"))
-  return AuthUser(item.optString("login"),item.optString("name").takeIf{it.isNotBlank()})
- }
- suspend fun exchangeMobileCode(code:String):AuthUser{
-  val json=JSONObject(execute("/api/auth/mobile/exchange","POST",JSONObject().put("code",code).toString()))
-  sessionToken=json.getString("sessionToken")
-  val user=json.getJSONObject("user")
-  return AuthUser(user.optString("login"),user.optString("name").takeIf{it.isNotBlank()})
- }
- fun login(context:Context){CustomTabsIntent.Builder().setShowTitle(true).build().launchUrl(context,Uri.parse(baseUrl+"/api/auth/github?platform=android"))}
- suspend fun logout(){runCatching{execute("/api/auth/logout","POST","{}")};sessionToken=null;currentSessionId=null}
- suspend fun projects():List<Project>{
-  val array=JSONObject(execute("/api/projects")).getJSONArray("projects")
-  return List(array.length()){i->
-   val x=array.getJSONObject(i)
-   Project(x.getString("id"),x.getString("name"),x.optString("description"),x.optString("githubOwner").takeIf{it.isNotBlank()},x.optString("githubRepo").takeIf{it.isNotBlank()},x.optString("githubRef").takeIf{it.isNotBlank()})
-  }
- }
- suspend fun createProject(name:String,description:String,owner:String?,repo:String?,ref:String?):Project{
-  val payload=JSONObject().put("name",name).put("description",description).apply{
-   if(owner.isNullOrBlank()||repo.isNullOrBlank()){put("githubOwner",JSONObject.NULL);put("githubRepo",JSONObject.NULL)}
-   else{put("githubOwner",owner);put("githubRepo",repo);put("githubRef",ref?.takeIf{it.isNotBlank()}?:JSONObject.NULL)}
-  }
-  val x=JSONObject(execute("/api/projects","POST",payload.toString())).getJSONObject("project")
-  return Project(x.getString("id"),x.getString("name"),x.optString("description"),x.optString("githubOwner").takeIf{it.isNotBlank()},x.optString("githubRepo").takeIf{it.isNotBlank()},x.optString("githubRef").takeIf{it.isNotBlank()})
- }
- suspend fun sessions(projectId:String?=null):List<Session>{
-  val suffix=projectId?.let{"?projectId="+Uri.encode(it)}.orEmpty()
-  val array=JSONObject(execute("/api/sessions"+suffix)).getJSONArray("sessions")
-  return List(array.length()){i->
-   val x=array.getJSONObject(i)
-   Session(x.getString("id"),x.optString("projectId").takeIf{it.isNotBlank()&&it!="null"},x.optString("title","New chat"),x.optString("modelId").takeIf{it.isNotBlank()&&it!="null"})
-  }
- }
- suspend fun createSession(title:String,projectId:String?,modelId:String?):Session{
-  val x=JSONObject(execute("/api/sessions","POST",JSONObject().put("title",title).put("projectId",projectId?:JSONObject.NULL).put("modelId",modelId?:JSONObject.NULL).toString())).getJSONObject("session")
-  val s=Session(x.getString("id"),x.optString("projectId").takeIf{it.isNotBlank()&&it!="null"},x.optString("title","New chat"),x.optString("modelId").takeIf{it.isNotBlank()&&it!="null"})
-  currentSessionId=s.id
-  return s
- }
- suspend fun sessionMessages(sessionId:String):List<Msg>{
-  val array=JSONObject(execute("/api/sessions/"+Uri.encode(sessionId))).getJSONArray("messages")
-  return List(array.length()) { i ->
-   val x = array.getJSONObject(i)
-   Msg(x.getString("role"), x.getString("content"))
-  }
- }
- suspend fun run(message:String,model:String,projectId:String?,sessionId:String?,flags:Map<String,Boolean>):Pair<String,String>{
-  val payload=JSONObject().put("message",message).put("modelId",model).put("projectId",projectId?:JSONObject.NULL).put("sessionId",sessionId?:JSONObject.NULL).put("stream",false)
-  flags.forEach{(key,value)->payload.put(key,value)}
-  val json=JSONObject(execute("/api/agent/run","POST",payload.toString()))
-  return json.optString("sessionId",sessionId.orEmpty()) to json.optString("message","No response returned.")
- }
- private fun extractError(body:String,fallback:String):String=runCatching{JSONObject(body).optString("error")}.getOrNull()?.takeIf{it.isNotBlank()}?:body.takeIf{it.isNotBlank()}?:fallback
+data class ChatSession(
+    val id: String,
+    val title: String,
+    val projectId: String?,
+    val modelId: String?
+)
+
+data class Repo(
+    val fullName: String,
+    val owner: String,
+    val name: String,
+    val description: String?
+)
+
+data class User(
+    val id: String,
+    val login: String,
+    val name: String?
+)
+
+data class LoginStart(
+    val requestId: String,
+    val authorizationUrl: String
+)
+
+class SolarApi(context: Context) {
+    private val prefs = context.getSharedPreferences("solar", Context.MODE_PRIVATE)
+
+    var baseUrl: String
+        get() = prefs.getString("base", "http://10.0.2.2:8080")!!.trimEnd('/')
+        set(value) {
+            prefs.edit().putString("base", value.trim().trimEnd('/')).apply()
+        }
+
+    val authToken: String?
+        get() = prefs.getString("auth_token", null)
+
+    val pendingAuthId: String?
+        get() = prefs.getString("pending_auth", null)
+
+    private val cookies = object : CookieJar {
+        private val map = mutableMapOf<String, List<Cookie>>()
+        override fun loadForRequest(url: HttpUrl): List<Cookie> = map[url.host].orEmpty()
+        override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
+            map[url.host] = cookies
+        }
+    }
+
+    private val client = OkHttpClient.Builder().cookieJar(cookies).build()
+
+    fun setPendingAuth(id: String?) {
+        prefs.edit().apply {
+            if (id == null) remove("pending_auth") else putString("pending_auth", id)
+        }.apply()
+    }
+
+    fun saveAuth(token: String, user: User) {
+        prefs.edit()
+            .putString("auth_token", token)
+            .putString("github_login", user.login)
+            .putString("github_name", user.name)
+            .apply()
+    }
+
+    fun clearAuth() {
+        prefs.edit()
+            .remove("auth_token")
+            .remove("github_login")
+            .remove("github_name")
+            .remove("pending_auth")
+            .apply()
+    }
+
+    fun savedUser(): User? {
+        val token = authToken ?: return null
+        val login = prefs.getString("github_login", null) ?: return null
+        return User(id = "", login = login, name = prefs.getString("github_name", null))
+    }
+
+    fun selectedModelId(): String = prefs.getString("selected_model", "") ?: ""
+
+    fun setSelectedModelId(id: String) {
+        prefs.edit().putString("selected_model", id).apply()
+    }
+
+    private fun builder(path: String, method: String = "GET", body: String? = null): Request.Builder {
+        val b = Request.Builder().url(baseUrl + path)
+        if (!authToken.isNullOrBlank()) b.header("Authorization", "Bearer " + authToken)
+        if (body != null) {
+            b.header("Content-Type", "application/json")
+            b.method(method, body.toRequestBody("application/json".toMediaType()))
+        } else if (method != "GET") {
+            b.method(method, null)
+        }
+        return b
+    }
+
+    private fun body(response: okhttp3.Response, fallback: String): String {
+        val text = response.body?.string().orEmpty()
+        if (!response.isSuccessful) {
+            throw Exception(extractError(text, fallback))
+        }
+        return text
+    }
+
+    suspend fun models(): List<Model> = withContext(Dispatchers.IO) {
+        client.newCall(builder("/api/models")).execute().use { response ->
+            val json = JSONObject(body(response, "Unable to load models."))
+            val array = json.getJSONArray("models")
+            List(array.length()) { i ->
+                val item = array.getJSONObject(i)
+                Model(
+                    id = item.optString("id"),
+                    name = item.optString("displayName", item.optString("id")),
+                    desc = item.optString("description").ifBlank { item.optString("provider") },
+                    provider = item.optString("provider"),
+                    capabilities = jsonStringList(item.optJSONArray("capabilities"))
+                )
+            }
+        }
+    }
+
+    suspend fun projects(): List<Project> = withContext(Dispatchers.IO) {
+        client.newCall(builder("/api/projects")).execute().use { response ->
+            val array = JSONObject(body(response, "Unable to load projects.")).getJSONArray("projects")
+            List(array.length()) { i ->
+                val item = array.getJSONObject(i)
+                Project(
+                    id = item.optString("id"),
+                    name = item.optString("name"),
+                    description = item.optString("description"),
+                    githubOwner = item.optString("github_owner").ifBlank { null },
+                    githubRepo = item.optString("github_repo").ifBlank { null },
+                    githubRef = item.optString("github_ref", "main")
+                )
+            }
+        }
+    }
+
+    suspend fun createProject(name: String, description: String, owner: String?, repo: String?, ref: String): Project =
+        withContext(Dispatchers.IO) {
+            val json = JSONObject()
+                .put("name", name)
+                .put("description", description)
+                .put("githubOwner", owner)
+                .put("githubRepo", repo)
+                .put("githubRef", ref.ifBlank { "main" })
+            client.newCall(builder("/api/projects", "POST", json.toString())).execute().use { response ->
+                val item = JSONObject(body(response, "Unable to create project."))
+                Project(
+                    id = item.optString("id"),
+                    name = item.optString("name"),
+                    description = item.optString("description"),
+                    githubOwner = item.optString("github_owner").ifBlank { null },
+                    githubRepo = item.optString("github_repo").ifBlank { null },
+                    githubRef = item.optString("github_ref", "main")
+                )
+            }
+        }
+
+    suspend fun deleteProject(id: String) = withContext(Dispatchers.IO) {
+        client.newCall(builder("/api/projects/" + id, "DELETE")).execute().use { response ->
+            body(response, "Unable to delete project.")
+        }
+    }
+
+    suspend fun sessions(projectId: String? = null): List<ChatSession> = withContext(Dispatchers.IO) {
+        val suffix = projectId?.let { "?projectId=" + Uri.encode(it) } ?: ""
+        client.newCall(builder("/api/chat/sessions" + suffix)).execute().use { response ->
+            val array = JSONObject(body(response, "Unable to load chats.")).getJSONArray("sessions")
+            List(array.length()) { i ->
+                val item = array.getJSONObject(i)
+                ChatSession(
+                    id = item.optString("id"),
+                    title = item.optString("title", "New chat"),
+                    projectId = item.optString("project_id").ifBlank { null },
+                    modelId = item.optString("model_id").ifBlank { null }
+                )
+            }
+        }
+    }
+
+    suspend fun createSession(projectId: String?, modelId: String?): ChatSession = withContext(Dispatchers.IO) {
+        val json = JSONObject()
+            .put("title", "New chat")
+            .put("projectId", projectId)
+            .put("modelId", modelId)
+        client.newCall(builder("/api/chat/sessions", "POST", json.toString())).execute().use { response ->
+            val item = JSONObject(body(response, "Unable to create chat."))
+            ChatSession(
+                id = item.optString("id"),
+                title = item.optString("title", "New chat"),
+                projectId = item.optString("project_id").ifBlank { null },
+                modelId = item.optString("model_id").ifBlank { null }
+            )
+        }
+    }
+
+    suspend fun deleteSession(id: String) = withContext(Dispatchers.IO) {
+        client.newCall(builder("/api/chat/sessions/" + id, "DELETE")).execute().use { response ->
+            body(response, "Unable to delete chat.")
+        }
+    }
+
+    suspend fun messages(sessionId: String): List<Msg> = withContext(Dispatchers.IO) {
+        client.newCall(builder("/api/chat/sessions/" + sessionId + "/messages")).execute().use { response ->
+            val array = JSONObject(body(response, "Unable to load chat messages.")).getJSONArray("messages")
+            List(array.length()) { i ->
+                val item = array.getJSONObject(i)
+                Msg(
+                    id = item.optString("id"),
+                    role = item.optString("role"),
+                    text = item.optString("content"),
+                    modelId = item.optString("model_id").ifBlank { null }
+                )
+            }
+        }
+    }
+
+    suspend fun repositories(): List<Repo> = withContext(Dispatchers.IO) {
+        client.newCall(builder("/api/github/repositories")).execute().use { response ->
+            val array = JSONArray(body(response, "Unable to load GitHub repositories."))
+            List(array.length()) { i ->
+                val item = array.getJSONObject(i)
+                Repo(
+                    fullName = item.optString("full_name"),
+                    owner = item.optJSONObject("owner")?.optString("login").orEmpty(),
+                    name = item.optString("name"),
+                    description = item.optString("description").ifBlank { null }
+                )
+            }
+        }
+    }
+
+    suspend fun startGithubMobile(): LoginStart = withContext(Dispatchers.IO) {
+        client.newCall(builder("/api/auth/github/mobile/start", "POST")).execute().use { response ->
+            val json = JSONObject(body(response, "Unable to start GitHub login."))
+            LoginStart(json.optString("requestId"), json.optString("authorizationUrl"))
+        }
+    }
+
+    suspend fun githubMobileStatus(requestId: String): JSONObject = withContext(Dispatchers.IO) {
+        client.newCall(builder("/api/auth/github/mobile/status?requestId=" + Uri.encode(requestId))).execute().use { response ->
+            JSONObject(body(response, "Unable to check GitHub login."))
+        }
+    }
+
+    suspend fun me(): User? = withContext(Dispatchers.IO) {
+        if (authToken.isNullOrBlank()) return@withContext null
+        client.newCall(builder("/api/auth/me")).execute().use { response ->
+            if (!response.isSuccessful) return@withContext null
+            val item = JSONObject(response.body?.string().orEmpty())
+            User(item.optString("id"), item.optString("login"), item.optString("name").ifBlank { null })
+        }
+    }
+
+    suspend fun logout() = withContext(Dispatchers.IO) {
+        runCatching {
+            client.newCall(builder("/api/auth/logout", "POST")).execute().use { response ->
+                response.close()
+            }
+        }
+        clearAuth()
+    }
+
+    suspend fun run(
+        message: String,
+        model: String,
+        sessionId: String,
+        projectId: String?,
+        flags: Map<String, Boolean>
+    ): String = withContext(Dispatchers.IO) {
+        val payload = JSONObject()
+            .put("message", message)
+            .put("modelId", model)
+            .put("sessionId", sessionId)
+            .put("projectId", projectId)
+            .put("stream", false)
+        flags.forEach { (key, value) -> payload.put(key, value) }
+        client.newCall(builder("/api/agent/run", "POST", payload.toString())).execute().use { response ->
+            val json = JSONObject(body(response, "Solar request failed."))
+            json.optString("message", json.optString("answer", "No response returned."))
+        }
+    }
+
+    fun openExternal(context: Context, url: String) {
+        CustomTabsIntent.Builder().setShowTitle(true).build()
+            .launchUrl(context, Uri.parse(url))
+    }
+
+    private fun jsonStringList(array: JSONArray?): List<String> {
+        if (array == null) return emptyList()
+        return List(array.length()) { i -> array.optString(i) }
+    }
+
+    private fun extractError(body: String, fallback: String): String {
+        return runCatching { JSONObject(body).optString("error") }
+            .getOrNull()
+            ?.takeIf { it.isNotBlank() }
+            ?: body.takeIf { it.isNotBlank() }
+            ?: fallback
+    }
 }
-private fun JSONArray.toStringList(): List<String> = List(length()) { optString(it) }
 
-@Composable fun SolarTheme(content:@Composable()->Unit){MaterialTheme(colorScheme=darkColorScheme(background=SolarBg,surface=SolarCard,primary=SolarAccent,onPrimary=Color.Black),content=content)}
-
-class MainActivity:ComponentActivity(){
- private var authCode by mutableStateOf<String?>(null)
- override fun onCreate(savedInstanceState:Bundle?){super.onCreate(savedInstanceState);handleIntent(intent);setContent{SolarTheme{SolarApp(this,authCode){authCode=null}}}}
- override fun onNewIntent(intent:Intent?){super.onNewIntent(intent);handleIntent(intent)}
- private fun handleIntent(intent:Intent?){val data=intent?.data?:return;if(data.scheme=="solar"&&data.host=="auth"&&data.path=="/callback")authCode=data.getQueryParameter("code")}
+@Composable
+fun SolarTheme(content: @Composable () -> Unit) {
+    MaterialTheme(
+        colorScheme = darkColorScheme(
+            background = SolarBg,
+            surface = SolarCard,
+            primary = SolarAccent,
+            onPrimary = Color.Black
+        ),
+        content = content
+    )
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable fun SolarApp(context:Context,authCode:String?,onAuthCodeHandled:()->Unit){
- val api=remember{SolarApi(context.applicationContext)}
- val scope=rememberCoroutineScope()
- var screen by remember{mutableStateOf("Chat")}
- var models by remember{mutableStateOf(emptyList<Model>())}
- var projects by remember{mutableStateOf(emptyList<Project>())}
- var sessions by remember{mutableStateOf(emptyList<Session>())}
- var selectedModel by remember{mutableStateOf(api.selectedModelId)}
- var selectedProject by remember{mutableStateOf<String?>(null)}
- var selectedSession by remember{mutableStateOf(api.currentSessionId)}
- var messages by remember{mutableStateOf(emptyList<Msg>())}
- var input by remember{mutableStateOf("")}
- var loading by remember{mutableStateOf(false)}
- var error by remember{mutableStateOf<String?>(null)}
- var user by remember{mutableStateOf<AuthUser?>(null)}
- var allowWrites by remember{mutableStateOf(false)}
- var allowTermux by remember{mutableStateOf(false)}
- var allowInternet by remember{mutableStateOf(true)}
- var allowBrowser by remember{mutableStateOf(false)}
- var showCreateProject by remember{mutableStateOf(false)}
- var showCreateSession by remember{mutableStateOf(false)}
-
- fun refresh(){
-  scope.launch{
-   if(!api.authenticated)return@launch
-   runCatching{api.projects()}.onSuccess{projects=it}.onFailure{error=it.message}
-   runCatching{api.sessions(selectedProject)}.onSuccess{loaded->sessions=loaded;if(selectedSession!=null&&loaded.none{it.id==selectedSession})selectedSession=null}.onFailure{error=it.message}
-  }
- }
-
- LaunchedEffect(Unit){
-  runCatching{api.models()}.onSuccess{loaded->
-   models=loaded
-   if(selectedModel.isBlank()||loaded.none{it.id==selectedModel}){selectedModel=loaded.firstOrNull()?.id.orEmpty();api.selectedModelId=selectedModel}
-  }.onFailure{error=it.message}
-  if(api.authenticated)runCatching{api.me()}.onSuccess{user=it}.onFailure{api.logout();user=null}.also{refresh()}
- }
- LaunchedEffect(authCode){
-  val code=authCode?:return@LaunchedEffect
-  loading=true;error=null
-  runCatching{api.exchangeMobileCode(code)}.onSuccess{user=it;screen="Chat";refresh()}.onFailure{error=it.message}
-  loading=false;onAuthCodeHandled()
- }
- LaunchedEffect(selectedSession){
-  val id=selectedSession?:return@LaunchedEffect
-  runCatching{api.sessionMessages(id)}.onSuccess{messages=it}.onFailure{error=it.message}
- }
-
- Row(Modifier.fillMaxSize()){
-  NavigationRail(containerColor=SolarBg){
-   Text("S",color=SolarAccent,fontWeight=FontWeight.Black,style=MaterialTheme.typography.headlineMedium,modifier=Modifier.padding(18.dp))
-   listOf("Chat" to Icons.Default.Chat,"Projects" to Icons.Default.Folder,"Sessions" to Icons.Default.Chat,"Models" to Icons.Default.ListIcon,"Settings" to Icons.Default.Settings).forEach{(name,icon)->
-    NavigationRailItem(selected=screen==name,onClick={screen=name;if(name=="Projects"||name=="Sessions")refresh()},icon={Icon(icon,contentDescription=name)},label={Text(name)})
-   }
-  }
-  Column(Modifier.fillMaxSize().padding(16.dp)){
-   when(screen){
-    "Chat"->ChatScreen(api,models,projects,sessions,selectedModel,selectedProject,selectedSession,messages,input,loading,allowWrites,allowTermux,allowInternet,allowBrowser,{selectedModel=it;api.selectedModelId=it},{selectedProject=it;selectedSession=null;api.currentSessionId=null;messages=emptyList();refresh()},{selectedSession=it;api.currentSessionId=it},{input=it},{
-      val question=input.trim();if(question.isBlank()||selectedModel.isBlank()||loading)Unit else {
-      input="";loading=true;error=null;messages=messages+Msg("user",question)
-      scope.launch{
-       runCatching{api.run(question,selectedModel,selectedProject,selectedSession,mapOf("allowWrites" to allowWrites,"allowTermux" to allowTermux,"allowInternet" to allowInternet,"allowBrowser" to allowBrowser,"allowFallback" to true))}
-       .onSuccess{(sessionId,answer)->if(selectedSession==null&&sessionId.isNotBlank()){selectedSession=sessionId;api.currentSessionId=sessionId};messages=messages+Msg("assistant",answer);refresh()}
-       .onFailure{error=it.message?:"Solar request failed."};loading=false
-      }
-    }},{api.login(context)},{showCreateSession=true})
-    "Projects"->ProjectsScreen(api.authenticated,projects,{api.login(context)},{showCreateProject=true})
-    "Sessions"->SessionsScreen(api.authenticated,sessions,{showCreateSession=true},{selectedSession=it;api.currentSessionId=it;screen="Chat"})
-    "Models"->ModelsScreen(models,selectedModel){selectedModel=it;api.selectedModelId=it}
-    else->SettingsScreen(api,user,allowWrites,allowTermux,allowInternet,allowBrowser,{api.login(context)},{allowWrites=it},{allowTermux=it},{allowInternet=it},{allowBrowser=it}){scope.launch{api.logout();user=null;projects=emptyList();sessions=emptyList();messages=emptyList()}}
-   }
-   error?.let{Text(it,color=MaterialTheme.colorScheme.error,modifier=Modifier.padding(top=8.dp))}
-  }
- }
-
- if(showCreateProject)CreateProjectDialog({showCreateProject=false}){name,description,owner,repo,ref->
-  scope.launch{runCatching{api.createProject(name,description,owner,repo,ref)}.onSuccess{showCreateProject=false;projects=api.projects();selectedProject=it.id;refresh()}.onFailure{error=it.message}}
- }
- if(showCreateSession)CreateSessionDialog({showCreateSession=false}){title->
-  scope.launch{runCatching{api.createSession(title,selectedProject,selectedModel)}.onSuccess{showCreateSession=false;selectedSession=it.id;messages=emptyList();sessions=api.sessions(selectedProject);screen="Chat"}.onFailure{error=it.message}}
- }
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContent { SolarTheme { SolarApp(this) } }
+    }
 }
 
-@Composable private fun ChatScreen(api:SolarApi,models:List<Model>,projects:List<Project>,sessions:List<Session>,selectedModel:String,selectedProject:String?,selectedSession:String?,messages:List<Msg>,input:String,loading:Boolean,allowWrites:Boolean,allowTermux:Boolean,allowInternet:Boolean,allowBrowser:Boolean,onModel:(String)->Unit,onProject:(String?)->Unit,onSession:(String?)->Unit,onInput:(String)->Unit,onSend:()->Unit,onGitHub:()->Unit,onNewSession:()->Unit){
- var modelMenu by remember{mutableStateOf(false)}
- var projectMenu by remember{mutableStateOf(false)}
- var sessionMenu by remember{mutableStateOf(false)}
- Row(verticalAlignment=Alignment.CenterVertically,modifier=Modifier.fillMaxWidth()){
-  Column{Text("Solar",style=MaterialTheme.typography.headlineSmall,fontWeight=FontWeight.Bold);Text(if(api.authenticated)"GitHub connected" else "Connect GitHub to use projects and saved sessions",style=MaterialTheme.typography.labelSmall)}
-  Spacer(Modifier.weight(1f));Button(onClick=onGitHub){Text(if(api.authenticated)"GitHub" else "Connect GitHub")}
- }
- Spacer(Modifier.height(10.dp))
- Row(horizontalArrangement=Arrangement.spacedBy(8.dp),modifier=Modifier.fillMaxWidth()){
-  Box{
-   OutlinedButton(onClick={modelMenu=true},enabled=models.isNotEmpty()){Text(models.firstOrNull{it.id==selectedModel}?.name?:"Select model")}
-   DropdownMenu(modelMenu,{modelMenu=false}){models.forEach{model->DropdownMenuItem(text={Column{Text(model.name);Text(model.provider+" • "+model.capabilities.joinToString(", "),style=MaterialTheme.typography.labelSmall)}},onClick={onModel(model.id);modelMenu=false})}}
-  }
-  Box{
-   OutlinedButton(onClick={projectMenu=true}){Text(projects.firstOrNull{it.id==selectedProject}?.name?:"No project")}
-   DropdownMenu(projectMenu,{projectMenu=false}){DropdownMenuItem(text={Text("No project")},onClick={onProject(null);projectMenu=false});projects.forEach{p->DropdownMenuItem(text={Text(p.name)},onClick={onProject(p.id);projectMenu=false})}}
-  }
-  Box{
-   OutlinedButton(onClick={sessionMenu=true}){Text(sessions.firstOrNull{it.id==selectedSession}?.title?:"New session")}
-   DropdownMenu(sessionMenu,{sessionMenu=false}){sessions.forEach{s->DropdownMenuItem(text={Text(s.title)},onClick={onSession(s.id);sessionMenu=false})};DropdownMenuItem(text={Text("Create new session")},onClick={sessionMenu=false;onNewSession()})}
-  }
- }
- LazyColumn(Modifier.weight(1f).fillMaxWidth(),contentPadding=PaddingValues(vertical=12.dp),verticalArrangement=Arrangement.spacedBy(10.dp)){
-  items(messages){message->Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(16.dp)){Column(Modifier.padding(14.dp)){Text(if(message.role=="user")"You" else "Solar",fontWeight=FontWeight.Bold);Text(message.text,Modifier.padding(top=4.dp))}}}
-  if(loading)item{Card(Modifier.fillMaxWidth()){Text("Solar is working…",Modifier.padding(14.dp))}}
- }
- Row(verticalAlignment=Alignment.Bottom,modifier=Modifier.fillMaxWidth()){
-  OutlinedTextField(input,onInput,Modifier.weight(1f),placeholder={Text("Ask Solar to code, explain, debug…")},maxLines=6)
-  Spacer(Modifier.width(8.dp));FilledIconButton(enabled=!loading&&input.isNotBlank()&&selectedModel.isNotBlank(),onClick=onSend){Icon(Icons.Default.Send,contentDescription="Send")}
- }
+@Composable
+fun SolarApp(context: Context) {
+    val api = remember { SolarApi(context.applicationContext) }
+    val scope = rememberCoroutineScope()
+
+    var screen by remember { mutableStateOf("Chats") }
+    var user by remember { mutableStateOf(api.savedUser()) }
+    var models by remember { mutableStateOf(emptyList<Model>()) }
+    var selectedModel by remember { mutableStateOf(api.selectedModelId()) }
+    var projects by remember { mutableStateOf(emptyList<Project>()) }
+    var sessions by remember { mutableStateOf(emptyList<ChatSession>()) }
+    var selectedSessionId by remember { mutableStateOf<String?>(null) }
+    var messages by remember { mutableStateOf(emptyList<Msg>()) }
+    var repos by remember { mutableStateOf(emptyList<Repo>()) }
+
+    var input by remember { mutableStateOf("") }
+    var loading by remember { mutableStateOf(false) }
+    var authBusy by remember { mutableStateOf(false) }
+    var pendingAuthId by remember { mutableStateOf(api.pendingAuthId) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    var allowWrites by remember { mutableStateOf(false) }
+    var allowTermux by remember { mutableStateOf(false) }
+    var allowInternet by remember { mutableStateOf(true) }
+    var allowBrowser by remember { mutableStateOf(false) }
+
+    var showProjectDialog by remember { mutableStateOf(false) }
+    var showDeleteSessionDialog by remember { mutableStateOf<ChatSession?>(null) }
+    var showModelMenu by remember { mutableStateOf(false) }
+    var backendDraft by remember { mutableStateOf(api.baseUrl) }
+
+    suspend fun refreshWorkspace() {
+        if (api.authToken.isNullOrBlank()) {
+            sessions = emptyList()
+            projects = emptyList()
+            repos = emptyList()
+            return
+        }
+        runCatching { api.me() }.onSuccess { me ->
+            user = me
+        }
+        runCatching { api.models() }.onSuccess { loaded ->
+            models = loaded
+            val current = loaded.firstOrNull { it.id == selectedModel } ?: loaded.firstOrNull()
+            if (current != null) {
+                selectedModel = current.id
+                api.setSelectedModelId(current.id)
+            }
+        }
+        runCatching { api.projects() }.onSuccess { projects = it }
+        runCatching { api.sessions() }.onSuccess { loaded ->
+            sessions = loaded
+            if (selectedSessionId == null && loaded.isNotEmpty()) selectedSessionId = loaded.first().id
+        }
+        runCatching { api.repositories() }.onSuccess { repos = it }
+    }
+
+    LaunchedEffect(Unit) {
+        runCatching { api.models() }
+            .onSuccess { loaded ->
+                models = loaded
+                if (selectedModel.isBlank()) {
+                    selectedModel = loaded.firstOrNull()?.id.orEmpty()
+                    if (selectedModel.isNotBlank()) api.setSelectedModelId(selectedModel)
+                }
+            }
+            .onFailure { error = it.message }
+        refreshWorkspace()
+    }
+
+    LaunchedEffect(pendingAuthId) {
+        val requestId = pendingAuthId ?: return@LaunchedEffect
+        authBusy = true
+        try {
+            while (isActive && pendingAuthId == requestId) {
+                val result = runCatching { api.githubMobileStatus(requestId) }.getOrNull()
+                when (result?.optString("status")) {
+                    "complete" -> {
+                        val token = result.optString("token")
+                        val item = result.optJSONObject("user")
+                        val loggedInUser = User(
+                            id = item?.optString("id").orEmpty(),
+                            login = item?.optString("login").orEmpty(),
+                            name = item?.optString("name").ifBlank { null }
+                        )
+                        if (token.isNotBlank() && loggedInUser.login.isNotBlank()) {
+                            api.saveAuth(token, loggedInUser)
+                            user = loggedInUser
+                            api.setPendingAuth(null)
+                            pendingAuthId = null
+                            error = null
+                            refreshWorkspace()
+                        } else {
+                            error = "GitHub login completed without a valid session."
+                            api.setPendingAuth(null)
+                            pendingAuthId = null
+                        }
+                    }
+                    "failed", "expired" -> {
+                        error = result?.optString("error").takeIf { !it.isNullOrBlank() } ?: "GitHub login expired."
+                        api.setPendingAuth(null)
+                        pendingAuthId = null
+                    }
+                    "consumed" -> {
+                        api.setPendingAuth(null)
+                        pendingAuthId = null
+                    }
+                }
+                delay(1500)
+            }
+        } finally {
+            authBusy = false
+        }
+    }
+
+    LaunchedEffect(selectedSessionId) {
+        val id = selectedSessionId ?: return@LaunchedEffect
+        if (!api.authToken.isNullOrBlank()) {
+            runCatching { api.messages(id) }
+                .onSuccess { messages = it }
+                .onFailure { error = it.message }
+        }
+    }
+
+    fun startNewChat() {
+        scope.launch {
+            if (api.authToken.isNullOrBlank()) {
+                error = "Connect GitHub before creating synced chats."
+                screen = "Settings"
+                return@launch
+            }
+            val currentProject = projects.firstOrNull()
+            runCatching { api.createSession(currentProject?.id, selectedModel.ifBlank { null }) }
+                .onSuccess {
+                    sessions = listOf(it) + sessions
+                    selectedSessionId = it.id
+                    messages = emptyList()
+                    screen = "Chats"
+                    error = null
+                }
+                .onFailure { error = it.message }
+        }
+    }
+
+    fun sendMessage() {
+        val text = input.trim()
+        val currentSession = sessions.firstOrNull { it.id == selectedSessionId }
+        if (text.isBlank() || loading) return
+        scope.launch {
+            var session = currentSession
+            if (session == null) {
+                if (api.authToken.isNullOrBlank()) {
+                    error = "Connect GitHub before sending a synced chat."
+                    screen = "Settings"
+                    return@launch
+                }
+                session = runCatching {
+                    api.createSession(null, selectedModel.ifBlank { null })
+                }.getOrElse {
+                    error = it.message
+                    return@launch
+                }
+                sessions = listOf(session!!) + sessions
+                selectedSessionId = session!!.id
+                messages = emptyList()
+            }
+            val projectId = session!!.projectId
+            val displayModel = selectedModel.ifBlank { models.firstOrNull()?.id.orEmpty() }
+            if (displayModel.isBlank()) {
+                error = "No AI model is available."
+                screen = "Models"
+                return@launch
+            }
+            input = ""
+            messages = messages + Msg("local-user-" + System.nanoTime(), "user", text, displayModel)
+            loading = true
+            error = null
+            try {
+                val answer = api.run(
+                    message = text,
+                    model = displayModel,
+                    sessionId = session!!.id,
+                    projectId = projectId,
+                    flags = mapOf(
+                        "allowWrites" to allowWrites,
+                        "allowTermux" to allowTermux,
+                        "allowInternet" to allowInternet,
+                        "allowBrowser" to allowBrowser,
+                        "allowFallback" to true
+                    )
+                )
+                messages = messages + Msg("local-assistant-" + System.nanoTime(), "assistant", answer, displayModel)
+                runCatching { api.sessions() }.onSuccess { sessions = it }
+            } catch (e: Exception) {
+                error = e.message ?: "Solar request failed."
+            } finally {
+                loading = false
+            }
+        }
+    }
+
+    fun startGithubLogin() {
+        scope.launch {
+            if (authBusy) return@launch
+            authBusy = true
+            runCatching { api.startGithubMobile() }
+                .onSuccess {
+                    api.setPendingAuth(it.requestId)
+                    pendingAuthId = it.requestId
+                    api.openExternal(context, it.authorizationUrl)
+                    error = null
+                }
+                .onFailure { error = it.message ?: "Unable to start GitHub login." }
+            authBusy = pendingAuthId != null
+        }
+    }
+
+    Scaffold(
+        containerColor = SolarBg,
+        bottomBar = {
+            NavigationBar(
+                modifier = Modifier.navigationBarsPadding(),
+                containerColor = SolarCard
+            ) {
+                val nav = listOf(
+                    "Chats" to Icons.Default.Chat,
+                    "Projects" to Icons.Default.Folder,
+                    "Models" to Icons.Default.Code,
+                    "Settings" to Icons.Default.Settings
+                )
+                nav.forEach { (name, icon) ->
+                    NavigationBarItem(
+                        selected = screen == name,
+                        onClick = { screen = name },
+                        icon = { Icon(icon, contentDescription = name) },
+                        label = { Text(name) }
+                    )
+                }
+            }
+        }
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(16.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Solar", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                    Text(
+                        text = if (user != null) "@" + user!!.login else "AI Agent & Coding Assistant",
+                        style = MaterialTheme.typography.labelSmall
+                    )
+                }
+
+                if (authBusy) {
+                    CircularProgressIndicator(modifier = Modifier.width(24.dp).height(24.dp), strokeWidth = 2.dp)
+                } else if (user == null) {
+                    Button(onClick = { startGithubLogin() }) {
+                        Icon(Icons.Default.GitHub, null)
+                        Spacer(Modifier.width(6.dp))
+                        Text("Connect")
+                    }
+                } else {
+                    IconButton(onClick = {
+                        scope.launch {
+                            api.logout()
+                            user = null
+                            sessions = emptyList()
+                            projects = emptyList()
+                            repos = emptyList()
+                            selectedSessionId = null
+                            messages = emptyList()
+                        }
+                    }) {
+                        Icon(Icons.Default.Logout, "Logout")
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(12.dp))
+
+            when (screen) {
+                "Chats" -> {
+                    Row(modifier = Modifier.fillMaxWidth()) {
+                        Column(
+                            modifier = Modifier
+                                .width(190.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Button(
+                                onClick = { startNewChat() },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(Icons.Default.Add, null)
+                                Spacer(Modifier.width(4.dp))
+                                Text("New chat")
+                            }
+
+                            LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                items(sessions) { session ->
+                                    Card(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = RoundedCornerShape(12.dp),
+                                        onClick = { selectedSessionId = session.id }
+                                    ) {
+                                        Row(
+                                            Modifier.padding(8.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Column(Modifier.weight(1f)) {
+                                                Text(
+                                                    session.title,
+                                                    fontWeight = if (session.id == selectedSessionId) FontWeight.Bold else FontWeight.Normal,
+                                                    maxLines = 2
+                                                )
+                                                Text(session.modelId ?: "Auto", style = MaterialTheme.typography.labelSmall)
+                                            }
+                                            TextButton(onClick = { showDeleteSessionDialog = session }) { Text("Delete") }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer(Modifier.width(12.dp))
+
+                        Column(modifier = Modifier.weight(1f)) {
+                            val currentSession = sessions.firstOrNull { it.id == selectedSessionId }
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(currentSession?.title ?: "New chat", fontWeight = FontWeight.Bold)
+                                    Text(
+                                        projects.firstOrNull { it.id == currentSession?.projectId }?.name ?: "No project",
+                                        style = MaterialTheme.typography.labelSmall
+                                    )
+                                }
+
+                                Box {
+                                    OutlinedButton(onClick = { showModelMenu = true }) {
+                                        Text(models.firstOrNull { it.id == selectedModel }?.name ?: "Choose model")
+                                    }
+                                    DropdownMenu(
+                                        expanded = showModelMenu,
+                                        onDismissRequest = { showModelMenu = false }
+                                    ) {
+                                        models.forEach { model ->
+                                            DropdownMenuItem(
+                                                text = { Text(model.name) },
+                                                onClick = {
+                                                    selectedModel = model.id
+                                                    api.setSelectedModelId(model.id)
+                                                    showModelMenu = false
+                                                    currentSession?.let { session ->
+                                                        scope.launch {
+                                                            runCatching {
+                                                                api.createSession(session.projectId, model.id)
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            Divider(Modifier.padding(vertical = 8.dp))
+
+                            LazyColumn(
+                                modifier = Modifier.weight(1f).fillMaxWidth(),
+                                contentPadding = PaddingValues(vertical = 8.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                items(messages) { message ->
+                                    Card(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = RoundedCornerShape(14.dp)
+                                    ) {
+                                        Column(Modifier.padding(12.dp)) {
+                                            Text(
+                                                if (message.role == "user") "You" else "Solar",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                            Spacer(Modifier.height(4.dp))
+                                            Text(message.text)
+                                        }
+                                    }
+                                }
+                            }
+
+                            if (loading) {
+                                LinearProgressIndicator(Modifier.fillMaxWidth())
+                                Spacer(Modifier.height(6.dp))
+                            }
+
+                            Row(verticalAlignment = Alignment.Bottom) {
+                                OutlinedTextField(
+                                    value = input,
+                                    onValueChange = { input = it },
+                                    modifier = Modifier.weight(1f),
+                                    placeholder = { Text("Ask Solar to code, explain, debug...") },
+                                    maxLines = 6
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                FilledIconButton(
+                                    enabled = !loading && input.isNotBlank(),
+                                    onClick = { sendMessage() }
+                                ) {
+                                    Icon(Icons.Default.Send, "Send")
+                                }
+                            }
+                        }
+                    }
+                }
+
+                "Projects" -> {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Projects", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                            Text("Persistent workspaces for Solar.")
+                        }
+                        IconButton(onClick = {
+                            scope.launch { runCatching { api.projects() }.onSuccess { projects = it } }
+                        }) {
+                            Icon(Icons.Default.Refresh, "Refresh")
+                        }
+                        Button(onClick = { showProjectDialog = true }) {
+                            Icon(Icons.Default.Add, null)
+                            Spacer(Modifier.width(4.dp))
+                            Text("New")
+                        }
+                    }
+
+                    Spacer(Modifier.height(12.dp))
+
+                    LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        items(projects) { project ->
+                            Card(Modifier.fillMaxWidth()) {
+                                Column(Modifier.padding(14.dp)) {
+                                    Text(project.name, fontWeight = FontWeight.Bold)
+                                    if (project.description.isNotBlank()) {
+                                        Spacer(Modifier.height(4.dp))
+                                        Text(project.description)
+                                    }
+                                    project.githubOwner?.let { owner ->
+                                        Text(owner + "/" + (project.githubRepo ?: ""), style = MaterialTheme.typography.labelSmall)
+                                    }
+                                    Spacer(Modifier.height(8.dp))
+                                    Row {
+                                        OutlinedButton(onClick = {
+                                            scope.launch {
+                                                runCatching { api.createSession(project.id, selectedModel.ifBlank { null }) }
+                                                    .onSuccess {
+                                                        sessions = listOf(it) + sessions
+                                                        selectedSessionId = it.id
+                                                        messages = emptyList()
+                                                        screen = "Chats"
+                                                    }
+                                                    .onFailure { error = it.message }
+                                            }
+                                        }) { Text("Open chat") }
+                                        Spacer(Modifier.width(8.dp))
+                                        TextButton(onClick = {
+                                            scope.launch {
+                                                runCatching { api.deleteProject(project.id) }
+                                                    .onSuccess { projects = projects.filterNot { it.id == project.id } }
+                                                    .onFailure { error = it.message }
+                                            }
+                                        }) { Text("Delete") }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if (repos.isNotEmpty()) {
+                        Spacer(Modifier.height(12.dp))
+                        Text("GitHub repositories", fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.height(6.dp))
+                        LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            items(repos.take(25)) { repo ->
+                                Card(Modifier.fillMaxWidth()) {
+                                    Row(
+                                        Modifier.padding(10.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(Modifier.weight(1f)) {
+                                            Text(repo.fullName, fontWeight = FontWeight.Bold)
+                                            repo.description?.let { Text(it, style = MaterialTheme.typography.labelSmall) }
+                                        }
+                                        TextButton(onClick = {
+                                            scope.launch {
+                                                runCatching { api.createProject(repo.name, repo.description.orEmpty(), repo.owner, repo.name, "main") }
+                                                    .onSuccess { projects = listOf(it) + projects }
+                                                    .onFailure { error = it.message }
+                                            }
+                                        }) { Text("Add") }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                "Models" -> {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Models", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                            Text("Select the model Solar should use.")
+                        }
+                        IconButton(onClick = {
+                            scope.launch { runCatching { api.models() }.onSuccess { models = it } }
+                        }) {
+                            Icon(Icons.Default.Refresh, "Refresh")
+                        }
+                    }
+
+                    Spacer(Modifier.height(12.dp))
+
+                    LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(models) { model ->
+                            Card(
+                                onClick = {
+                                    selectedModel = model.id
+                                    api.setSelectedModelId(model.id)
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    RadioButton(
+                                        selected = selectedModel == model.id,
+                                        onClick = {
+                                            selectedModel = model.id
+                                            api.setSelectedModelId(model.id)
+                                        }
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    Column {
+                                        Text(model.name, fontWeight = FontWeight.Bold)
+                                        Text(model.provider, style = MaterialTheme.typography.labelSmall)
+                                        if (model.desc.isNotBlank()) Text(model.desc, style = MaterialTheme.typography.labelSmall)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                else -> {
+                    Text("Settings", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(10.dp))
+
+                    Card(Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(14.dp)) {
+                            Text("GitHub account", fontWeight = FontWeight.Bold)
+                            Spacer(Modifier.height(6.dp))
+                            Text(if (user == null) "Not connected" else "Connected as @" + user!!.login)
+                            Spacer(Modifier.height(8.dp))
+                            Button(
+                                onClick = { startGithubLogin() },
+                                enabled = !authBusy
+                            ) {
+                                Icon(Icons.Default.GitHub, null)
+                                Spacer(Modifier.width(6.dp))
+                                Text(if (user == null) "Connect GitHub" else "Reconnect GitHub")
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.height(10.dp))
+
+                    Card(Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(14.dp)) {
+                            Text("Agent permissions", fontWeight = FontWeight.Bold)
+                            PermissionRow("Allow repository writes", allowWrites) { allowWrites = it }
+                            PermissionRow("Allow Termux commands", allowTermux) { allowTermux = it }
+                            PermissionRow("Allow internet", allowInternet) { allowInternet = it }
+                            PermissionRow("Allow browser", allowBrowser) { allowBrowser = it }
+                        }
+                    }
+
+                    Spacer(Modifier.height(10.dp))
+
+                    Card(Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(14.dp)) {
+                            Text("Backend", fontWeight = FontWeight.Bold)
+                            Spacer(Modifier.height(8.dp))
+                            OutlinedTextField(
+                                value = backendDraft,
+                                onValueChange = { backendDraft = it },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            Button(onClick = {
+                                api.baseUrl = backendDraft
+                                error = null
+                                scope.launch { refreshWorkspace() }
+                            }) { Text("Save backend URL") }
+                            Text(
+                                "Emulator default: http://10.0.2.2:8080",
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                        }
+                    }
+                }
+            }
+
+            error?.let {
+                Spacer(Modifier.height(8.dp))
+                Text(it, color = MaterialTheme.colorScheme.error)
+            }
+        }
+    }
+
+    if (showProjectDialog) {
+        ProjectDialog(
+            onDismiss = { showProjectDialog = false },
+            onCreate = { name, description, owner, repo, ref ->
+                scope.launch {
+                    runCatching { api.createProject(name, description, owner, repo, ref) }
+                        .onSuccess {
+                            projects = listOf(it) + projects
+                            showProjectDialog = false
+                            error = null
+                        }
+                        .onFailure { error = it.message }
+                }
+            }
+        )
+    }
+
+    showDeleteSessionDialog?.let { session ->
+        AlertDialog(
+            onDismissRequest = { showDeleteSessionDialog = null },
+            title = { Text("Delete chat?") },
+            text = { Text(session.title) },
+            confirmButton = {
+                TextButton(onClick = {
+                    scope.launch {
+                        runCatching { api.deleteSession(session.id) }
+                            .onSuccess {
+                                sessions = sessions.filterNot { it.id == session.id }
+                                if (selectedSessionId == session.id) {
+                                    selectedSessionId = sessions.firstOrNull()?.id
+                                    messages = emptyList()
+                                }
+                                showDeleteSessionDialog = null
+                            }
+                            .onFailure { error = it.message }
+                    }
+                }) { Text("Delete") }
+            },
+            dismissButton = { TextButton(onClick = { showDeleteSessionDialog = null }) { Text("Cancel") } }
+        )
+    }
 }
 
-@Composable private fun ProjectsScreen(authenticated:Boolean,projects:List<Project>,onGitHub:()->Unit,onCreate:()->Unit){
- Row(verticalAlignment=Alignment.CenterVertically,modifier=Modifier.fillMaxWidth()){Text("Projects",style=MaterialTheme.typography.headlineSmall,fontWeight=FontWeight.Bold);Spacer(Modifier.weight(1f));Button(onClick=onCreate,enabled=authenticated){Text("New project")}}
- Spacer(Modifier.height(12.dp))
- if(!authenticated)Card{Column(Modifier.padding(18.dp)){Text("GitHub sign-in required");Text("Connect GitHub before creating or saving Solar projects.",Modifier.padding(top=6.dp));Button(onClick=onGitHub,modifier=Modifier.padding(top=12.dp)){Text("Connect GitHub")}}}
- else if(projects.isEmpty())Card{Text("No projects yet. Create your first Solar project.",Modifier.padding(18.dp))}
- else LazyColumn(verticalArrangement=Arrangement.spacedBy(10.dp)){items(projects){project->Card{Column(Modifier.padding(18.dp)){Text(project.name,fontWeight=FontWeight.Bold);if(project.description.isNotBlank())Text(project.description,Modifier.padding(top=4.dp));val repo=listOfNotNull(project.githubOwner,project.githubRepo).joinToString("/");if(repo.isNotBlank())Text("GitHub: "+repo+(project.githubRef?.let{" @ "+it}?: ""),style=MaterialTheme.typography.labelSmall,modifier=Modifier.padding(top=8.dp))}}}}
+@Composable
+private fun PermissionRow(title: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(top = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(title, Modifier.weight(1f))
+        androidx.compose.material3.Switch(checked = checked, onCheckedChange = onCheckedChange)
+    }
 }
 
-@Composable private fun SessionsScreen(authenticated:Boolean,sessions:List<Session>,onNew:()->Unit,onOpen:(String)->Unit){
- Row(verticalAlignment=Alignment.CenterVertically,modifier=Modifier.fillMaxWidth()){Text("Chat Sessions",style=MaterialTheme.typography.headlineSmall,fontWeight=FontWeight.Bold);Spacer(Modifier.weight(1f));Button(onClick=onNew,enabled=authenticated){Text("New session")}}
- Spacer(Modifier.height(12.dp))
- if(!authenticated)Text("Connect GitHub to persist and reopen sessions.")
- else if(sessions.isEmpty())Text("No saved sessions yet.")
- else LazyColumn(verticalArrangement=Arrangement.spacedBy(8.dp)){items(sessions){s->Card(onClick={onOpen(s.id)}){Column(Modifier.padding(16.dp)){Text(s.title,fontWeight=FontWeight.Bold);Text(s.modelId?:"Auto model",style=MaterialTheme.typography.labelSmall)}}}}
-}
+@Composable
+private fun ProjectDialog(
+    onDismiss: () -> Unit,
+    onCreate: (String, String, String?, String?, String) -> Unit
+) {
+    var name by remember { mutableStateOf("") }
+    var description by remember { mutableStateOf("") }
+    var owner by remember { mutableStateOf("") }
+    var repo by remember { mutableStateOf("") }
+    var ref by remember { mutableStateOf("main") }
 
-@Composable private fun ModelsScreen(models:List<Model>,selected:String,onSelect:(String)->Unit){
- Text("Models",style=MaterialTheme.typography.headlineSmall,fontWeight=FontWeight.Bold);Text("Choose the exact backend model Solar should use.",style=MaterialTheme.typography.labelSmall,modifier=Modifier.padding(top=4.dp));Spacer(Modifier.height(12.dp))
- LazyColumn(verticalArrangement=Arrangement.spacedBy(10.dp)){items(models){model->Card{Row(Modifier.fillMaxWidth().padding(16.dp),verticalAlignment=Alignment.CenterVertically){Column(Modifier.weight(1f)){Text(model.name,fontWeight=FontWeight.Bold);Text(model.id,style=MaterialTheme.typography.labelSmall);if(model.desc.isNotBlank())Text(model.desc,style=MaterialTheme.typography.bodySmall,modifier=Modifier.padding(top=4.dp))};Button(onClick={onSelect(model.id)}){Text(if(selected==model.id)"Selected" else "Use")}}}}}
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Create project") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(name, { name = it }, label = { Text("Name") }, singleLine = true)
+                OutlinedTextField(description, { description = it }, label = { Text("Description") }, minLines = 2)
+                OutlinedTextField(owner, { owner = it }, label = { Text("GitHub owner (optional)") }, singleLine = true)
+                OutlinedTextField(repo, { repo = it }, label = { Text("GitHub repository (optional)") }, singleLine = true)
+                OutlinedTextField(ref, { ref = it }, label = { Text("Branch / ref") }, singleLine = true)
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = name.isNotBlank(),
+                onClick = {
+                    onCreate(
+                        name.trim(),
+                        description.trim(),
+                        owner.trim().ifBlank { null },
+                        repo.trim().ifBlank { null },
+                        ref.trim().ifBlank { "main" }
+                    )
+                }
+            ) { Text("Create") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
 }
-
-@Composable private fun SettingsScreen(api:SolarApi,user:AuthUser?,allowWrites:Boolean,allowTermux:Boolean,allowInternet:Boolean,allowBrowser:Boolean,onGitHub:()->Unit,onWrites:(Boolean)->Unit,onTermux:(Boolean)->Unit,onInternet:(Boolean)->Unit,onBrowser:(Boolean)->Unit,onLogout:()->Unit){
- Text("Settings",style=MaterialTheme.typography.headlineSmall,fontWeight=FontWeight.Bold);Spacer(Modifier.height(10.dp))
- Card{Column(Modifier.padding(16.dp)){Text(if(user!=null)"Signed in as "+user.login else "Not connected to GitHub");Button(onClick=if(user==null)onGitHub else onLogout,modifier=Modifier.padding(top=10.dp)){Text(if(user==null)"Connect GitHub" else "Disconnect GitHub")}}}
- Spacer(Modifier.height(12.dp));
- PermissionRow("Allow repository writes",allowWrites,onWrites)
- PermissionRow("Allow Termux commands",allowTermux,onTermux)
- PermissionRow("Allow internet",allowInternet,onInternet)
- PermissionRow("Allow browser",allowBrowser,onBrowser)
- Spacer(Modifier.height(12.dp));Text("Backend URL",fontWeight=FontWeight.Bold);OutlinedTextField(api.baseUrl,{api.baseUrl=it},singleLine=true,modifier=Modifier.fillMaxWidth());Text("Use the deployed Solar backend URL here for a physical device.",style=MaterialTheme.typography.labelSmall,modifier=Modifier.padding(top=4.dp))
-}
-
-@Composable private fun CreateProjectDialog(onDismiss:()->Unit,onCreate:(String,String,String?,String?,String?)->Unit){
- var name by remember{mutableStateOf("")};var description by remember{mutableStateOf("")};var owner by remember{mutableStateOf("")};var repo by remember{mutableStateOf("")};var ref by remember{mutableStateOf("")}
- AlertDialog(onDismissRequest=onDismiss,title={Text("Create project")},text={Column(verticalArrangement=Arrangement.spacedBy(8.dp)){OutlinedTextField(name,{name=it},label={Text("Project name")},singleLine=true);OutlinedTextField(description,{description=it},label={Text("Description")},maxLines=3);OutlinedTextField(owner,{owner=it},label={Text("GitHub owner (optional)")},singleLine=true);OutlinedTextField(repo,{repo=it},label={Text("GitHub repo (optional)")},singleLine=true);OutlinedTextField(ref,{ref=it},label={Text("Branch/ref (optional)")},singleLine=true)}},confirmButton={Button(onClick={if(name.isNotBlank())onCreate(name.trim(),description.trim(),owner.trim().takeIf{it.isNotBlank()},repo.trim().takeIf{it.isNotBlank()},ref.trim().takeIf{it.isNotBlank()})},enabled=name.isNotBlank()){Text("Create")}},dismissButton={TextButton(onClick=onDismiss){Text("Cancel")}})
-}
-
-@Composable private fun CreateSessionDialog(onDismiss:()->Unit,onCreate:(String)->Unit){
- var title by remember{mutableStateOf("")}
- AlertDialog(onDismissRequest=onDismiss,title={Text("New chat session")},text={OutlinedTextField(title,{title=it},label={Text("Session title")},singleLine=true,placeholder={Text("e.g. Fix login bug")})},confirmButton={Button(onClick={onCreate(title.trim().ifBlank{"New chat"})}){Text("Create")}},dismissButton={TextButton(onClick=onDismiss){Text("Cancel")}})
-}
-
-@Composable private fun PermissionRow(title:String,checked:Boolean,onCheckedChange:(Boolean)->Unit){Card{Row(Modifier.fillMaxWidth().padding(horizontal=16.dp,vertical=8.dp),verticalAlignment=Alignment.CenterVertically){Text(title,Modifier.weight(1f));Switch(checked,onCheckedChange)}}}
