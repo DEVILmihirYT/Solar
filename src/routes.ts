@@ -5,6 +5,16 @@ import { pool } from "./db.js";
 import { bridgeUser, connectBridge, validateTermuxCommand } from "./termux.js";
 import { listPublicModels, runAgent, type AgentEvent } from "./agent.js";
 
+function projectCompat(row:any){
+ return {...row,github_owner:row.githubOwner,github_repo:row.githubRepo,github_ref:row.githubRef};
+}
+function sessionCompat(row:any){
+ return {...row,project_id:row.projectId,model_id:row.modelId};
+}
+function messageCompat(row:any){
+ return {...row,model_id:row.modelId};
+}
+
 export async function registerRoutes(app:FastifyInstance){
  app.get("/api/health",async()=>({ok:true,service:"solar-backend",timestamp:new Date().toISOString()}));
  app.get("/api/models",async()=>({models:listPublicModels()}));
@@ -15,7 +25,7 @@ export async function registerRoutes(app:FastifyInstance){
 
  app.get("/api/projects",{preHandler:requireAuth},async(req)=>{
   const q=await pool.query<any>("SELECT id,name,description,github_owner,github_repo,github_ref,created_at,updated_at FROM projects WHERE user_id=$1 ORDER BY updated_at DESC",[req.authUser!.id]);
-  return {projects:q.rows};
+  return {projects:q.rows.map(projectCompat)};
  });
  app.post("/api/projects",{preHandler:requireAuth},async(req,reply)=>{
   const p=z.object({name:z.string().trim().min(1).max(120),description:z.string().max(2000).default(""),githubOwner:z.string().trim().max(100).optional().nullable(),githubRepo:z.string().trim().max(200).optional().nullable(),githubRef:z.string().trim().max(200).default("main")}).safeParse(req.body);
