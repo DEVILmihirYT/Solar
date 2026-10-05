@@ -24,7 +24,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.List as ListIcon
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
@@ -239,7 +239,7 @@ class MainActivity:ComponentActivity(){
  Row(Modifier.fillMaxSize()){
   NavigationRail(containerColor=SolarBg){
    Text("S",color=SolarAccent,fontWeight=FontWeight.Black,style=MaterialTheme.typography.headlineMedium,modifier=Modifier.padding(18.dp))
-   listOf("Chat" to Icons.Default.Chat,"Projects" to Icons.Default.Folder,"Sessions" to Icons.Default.Chat,"Models" to Icons.Default.List,"Settings" to Icons.Default.Settings).forEach{(name,icon)->
+   listOf("Chat" to Icons.Default.Chat,"Projects" to Icons.Default.Folder,"Sessions" to Icons.Default.Chat,"Models" to Icons.Default.ListIcon,"Settings" to Icons.Default.Settings).forEach{(name,icon)->
     NavigationRailItem(selected=screen==name,onClick={screen=name;if(name=="Projects"||name=="Sessions")refresh()},icon={Icon(icon,contentDescription=name)},label={Text(name)})
    }
   }
