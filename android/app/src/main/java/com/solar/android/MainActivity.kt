@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -472,7 +471,7 @@ fun SolarApp(context: Context) {
                     }
 
                     Text(
-                        text = \${api.baseUrl},
+                        text = "Backend: " + api.baseUrl,
                         style = MaterialTheme.typography.labelSmall
                     )
                 }
