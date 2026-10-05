@@ -1,7 +1,7 @@
 name: Solar Backend CI
 on:
   push:
-    branches: [main, develop]
+    branches: [main, develop, fix/android-workspace-auth-sessions]
   pull_request:
     branches: [main]
 permissions:
