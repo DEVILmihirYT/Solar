@@ -38,7 +38,7 @@ jobs:
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: solar-android-v0.3.1-\${{ github.sha }}
+          name: solar-android-v0.3.1-${{ github.sha }}
           path: android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 14
