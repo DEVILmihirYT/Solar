@@ -197,7 +197,8 @@ class SolarApi(context: Context) {
     }
 
     private fun builder(path: String, method: String = "GET", body: String? = null): Request {
-        val b = Request.Builder().url(baseUrl + path)        if (!authToken.isNullOrBlank()) b.header("Authorization", "Bearer " + authToken)
+        val b = Request.Builder().url(baseUrl + path)
+        if (!authToken.isNullOrBlank()) b.header("Authorization", "Bearer " + authToken)
         if (body != null) {
             b.header("Content-Type", "application/json")
             b.method(method, body.toRequestBody("application/json".toMediaType()))
@@ -599,7 +600,8 @@ fun SolarApp(context: Context) {
 
     fun selectModel(id: String) {
         if (id.isBlank()) return
-        selectedModel = id        api.setSelectedModelId(id)
+        selectedModel = id
+        api.setSelectedModelId(id)
         val sid = selectedSessionId ?: return
         scope.launch {
             runCatching { api.updateSession(sid, modelId = id) }
@@ -997,7 +999,8 @@ fun SolarApp(context: Context) {
                             Icon(Icons.Default.Refresh, "Refresh")
                         }
                         Button(onClick = { showProjectDialog = true }) {
-                            Icon(Icons.Default.Add, null)                            Spacer(Modifier.width(4.dp))
+                            Icon(Icons.Default.Add, null)
+                            Spacer(Modifier.width(4.dp))
                             Text("New")
                         }
                     }
@@ -1196,7 +1199,8 @@ fun SolarApp(context: Context) {
                             selectedSessionId = it.id
                             selectedModel = it.modelId ?: selectedModel
                             api.setSelectedModelId(selectedModel)
-                            messages = emptyList()                            showNewChatDialog = false
+                            messages = emptyList()
+                            showNewChatDialog = false
                             screen = "Chats"
                             error = null
                         }
