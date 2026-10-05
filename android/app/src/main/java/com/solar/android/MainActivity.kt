@@ -654,12 +654,18 @@ fun SolarApp(context: Context) {
         scope.launch {
             if (authBusy) return@launch
             authBusy = true
+            val healthError = runCatching { api.health() }.exceptionOrNull()
+            if (healthError != null) {
+                error = "Backend is not reachable at " + api.baseUrl + ". Set a reachable HTTPS backend URL in Settings first."
+                authBusy = false
+                return@launch
+            }
             runCatching { api.startGithubMobile() }
                 .onSuccess {
                     api.setPendingAuth(it.requestId)
                     pendingAuthId = it.requestId
-                    api.openExternal(context, it.authorizationUrl)
-                    error = null
+                    runCatching { api.openExternal(context, it.authorizationUrl) }
+                        .onFailure { error = it.message ?: "Could not open the GitHub authorization page." }
                 }
                 .onFailure { error = it.message ?: "Unable to start GitHub login." }
             authBusy = pendingAuthId != null
@@ -830,17 +836,6 @@ fun SolarApp(context: Context) {
                                     expanded = showProjectMenu,
                                     onDismissRequest = { showProjectMenu = false }
                                 ) {
-                                    DropdownMenuItem(
-                                        text = { Text("No project") },
-                                        onClick = {
-                                            showProjectMenu = false
-                                            selectedSessionId?.let { sid ->
-                                                scope.launch {
-                                                    runCatching { api.updateSession(sid, projectId = "") }
-                                                }
-                                            }
-                                        }
-                                    )
                                     projects.forEach { project ->
                                         DropdownMenuItem(
                                             text = { Text(project.name) },
