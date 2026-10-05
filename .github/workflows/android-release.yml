@@ -8,6 +8,10 @@ on:
       - "android/**"
       - ".github/workflows/android-release.yml"
 
+concurrency:
+  group: solar-android-release-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: write
 
