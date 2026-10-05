@@ -1,6 +1,7 @@
 package com.solar.android
 
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -240,9 +241,9 @@ class SolarApi(context: Context) {
                     id = item.optString("id"),
                     name = item.optString("name"),
                     description = item.optString("description"),
-                    githubOwner = item.optString("github_owner").ifBlank { null },
-                    githubRepo = item.optString("github_repo").ifBlank { null },
-                    githubRef = item.optString("github_ref", "main")
+                    githubOwner = item.optString("githubOwner").ifBlank { item.optString("github_owner").ifBlank { null } },
+                    githubRepo = item.optString("githubRepo").ifBlank { item.optString("github_repo").ifBlank { null } },
+                    githubRef = item.optString("githubRef").ifBlank { item.optString("github_ref", "main") }
                 )
             }
         }
@@ -257,14 +258,15 @@ class SolarApi(context: Context) {
                 .put("githubRepo", repo)
                 .put("githubRef", ref.ifBlank { "main" })
             client.newCall(builder("/api/projects", "POST", json.toString())).execute().use { response ->
-                val item = JSONObject(body(response, "Unable to create project."))
+                val wrapper = JSONObject(body(response, "Unable to create project."))
+                val item = wrapper.optJSONObject("project") ?: wrapper
                 Project(
                     id = item.optString("id"),
                     name = item.optString("name"),
                     description = item.optString("description"),
-                    githubOwner = item.optString("github_owner").ifBlank { null },
-                    githubRepo = item.optString("github_repo").ifBlank { null },
-                    githubRef = item.optString("github_ref", "main")
+                    githubOwner = item.optString("githubOwner").ifBlank { item.optString("github_owner").ifBlank { null } },
+                    githubRepo = item.optString("githubRepo").ifBlank { item.optString("github_repo").ifBlank { null } },
+                    githubRef = item.optString("githubRef").ifBlank { item.optString("github_ref", "main") }
                 )
             }
         }
@@ -277,15 +279,15 @@ class SolarApi(context: Context) {
 
     suspend fun sessions(projectId: String? = null): List<ChatSession> = withContext(Dispatchers.IO) {
         val suffix = projectId?.let { "?projectId=" + Uri.encode(it) } ?: ""
-        client.newCall(builder("/api/chat/sessions" + suffix)).execute().use { response ->
+        client.newCall(builder("/api/sessions" + suffix)).execute().use { response ->
             val array = JSONObject(body(response, "Unable to load chats.")).getJSONArray("sessions")
             List(array.length()) { i ->
                 val item = array.getJSONObject(i)
                 ChatSession(
                     id = item.optString("id"),
                     title = item.optString("title", "New chat"),
-                    projectId = item.optString("project_id").ifBlank { null },
-                    modelId = item.optString("model_id").ifBlank { null }
+                    projectId = item.optString("projectId").ifBlank { item.optString("project_id").ifBlank { null } },
+                    modelId = item.optString("modelId").ifBlank { item.optString("model_id").ifBlank { null } }
                 )
             }
         }
@@ -322,7 +324,7 @@ class SolarApi(context: Context) {
                     id = item.optString("id"),
                     role = item.optString("role"),
                     text = item.optString("content"),
-                    modelId = item.optString("model_id").ifBlank { null }
+                    modelId = item.optString("modelId").ifBlank { item.optString("model_id").ifBlank { null } }
                 )
             }
         }
@@ -340,19 +342,6 @@ class SolarApi(context: Context) {
                     description = item.optString("description").ifBlank { null }
                 )
             }
-        }
-    }
-
-    suspend fun startGithubMobile(): LoginStart = withContext(Dispatchers.IO) {
-        client.newCall(builder("/api/auth/github/mobile/start", "POST")).execute().use { response ->
-            val json = JSONObject(body(response, "Unable to start GitHub login."))
-            LoginStart(json.optString("requestId"), json.optString("authorizationUrl"))
-        }
-    }
-
-    suspend fun githubMobileStatus(requestId: String): JSONObject = withContext(Dispatchers.IO) {
-        client.newCall(builder("/api/auth/github/mobile/status?requestId=" + Uri.encode(requestId))).execute().use { response ->
-            JSONObject(body(response, "Unable to check GitHub login."))
         }
     }
 
@@ -427,14 +416,33 @@ fun SolarTheme(content: @Composable () -> Unit) {
 }
 
 class MainActivity : ComponentActivity() {
+    private var authCode by mutableStateOf<String?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { SolarTheme { SolarApp(this) } }
+        handleIntent(intent)
+        setContent {
+            SolarTheme {
+                SolarApp(this, authCode) { authCode = null }
+            }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleIntent(intent)
+    }
+
+    private fun handleIntent(intent: Intent?) {
+        val data = intent?.data ?: return
+        if (data.scheme == "solar" && data.host == "auth" && data.path == "/callback") {
+            authCode = data.getQueryParameter("code")
+        }
     }
 }
 
 @Composable
-fun SolarApp(context: Context) {
+fun SolarApp(context: Context, authCode: String?, onAuthCodeHandled: () -> Unit) {
     val api = remember { SolarApi(context.applicationContext) }
     val scope = rememberCoroutineScope()
 
@@ -451,7 +459,6 @@ fun SolarApp(context: Context) {
     var input by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(false) }
     var authBusy by remember { mutableStateOf(false) }
-    var pendingAuthId by remember { mutableStateOf(api.pendingAuthId) }
     var error by remember { mutableStateOf<String?>(null) }
 
     var allowWrites by remember { mutableStateOf(false) }
@@ -503,49 +510,20 @@ fun SolarApp(context: Context) {
         refreshWorkspace()
     }
 
-    LaunchedEffect(pendingAuthId) {
-        val requestId = pendingAuthId ?: return@LaunchedEffect
+    LaunchedEffect(authCode) {
+        val code = authCode ?: return@LaunchedEffect
         authBusy = true
-        try {
-            while (isActive && pendingAuthId == requestId) {
-                val result = runCatching { api.githubMobileStatus(requestId) }.getOrNull()
-                when (result?.optString("status")) {
-                    "complete" -> {
-                        val token = result.optString("token")
-                        val item = result.optJSONObject("user")
-                        val loggedInUser = User(
-                            id = item?.optString("id").orEmpty(),
-                            login = item?.optString("login").orEmpty(),
-                            name = item?.optString("name").ifBlank { null }
-                        )
-                        if (token.isNotBlank() && loggedInUser.login.isNotBlank()) {
-                            api.saveAuth(token, loggedInUser)
-                            user = loggedInUser
-                            api.setPendingAuth(null)
-                            pendingAuthId = null
-                            error = null
-                            refreshWorkspace()
-                        } else {
-                            error = "GitHub login completed without a valid session."
-                            api.setPendingAuth(null)
-                            pendingAuthId = null
-                        }
-                    }
-                    "failed", "expired" -> {
-                        error = result?.optString("error").takeIf { !it.isNullOrBlank() } ?: "GitHub login expired."
-                        api.setPendingAuth(null)
-                        pendingAuthId = null
-                    }
-                    "consumed" -> {
-                        api.setPendingAuth(null)
-                        pendingAuthId = null
-                    }
-                }
-                delay(1500)
+        error = null
+        runCatching { api.exchangeMobileCode(code) }
+            .onSuccess {
+                user = it
+                refreshWorkspace()
             }
-        } finally {
-            authBusy = false
-        }
+            .onFailure {
+                error = it.message ?: "GitHub login failed."
+            }
+        authBusy = false
+        onAuthCodeHandled()
     }
 
     LaunchedEffect(selectedSessionId) {
@@ -564,8 +542,7 @@ fun SolarApp(context: Context) {
                 screen = "Settings"
                 return@launch
             }
-            val currentProject = projects.firstOrNull()
-            runCatching { api.createSession(currentProject?.id, selectedModel.ifBlank { null }) }
+            runCatching { api.createSession(null, selectedModel.ifBlank { null }) }
                 .onSuccess {
                     sessions = listOf(it) + sessions
                     selectedSessionId = it.id
@@ -635,19 +612,8 @@ fun SolarApp(context: Context) {
     }
 
     fun startGithubLogin() {
-        scope.launch {
-            if (authBusy) return@launch
-            authBusy = true
-            runCatching { api.startGithubMobile() }
-                .onSuccess {
-                    api.setPendingAuth(it.requestId)
-                    pendingAuthId = it.requestId
-                    api.openExternal(context, it.authorizationUrl)
-                    error = null
-                }
-                .onFailure { error = it.message ?: "Unable to start GitHub login." }
-            authBusy = pendingAuthId != null
-        }
+        runCatching { api.login(context) }
+            .onFailure { error = it.message ?: "Unable to open GitHub login." }
     }
 
     Scaffold(
@@ -793,13 +759,7 @@ fun SolarApp(context: Context) {
                                                     selectedModel = model.id
                                                     api.setSelectedModelId(model.id)
                                                     showModelMenu = false
-                                                    currentSession?.let { session ->
-                                                        scope.launch {
-                                                            runCatching {
-                                                                api.createSession(session.projectId, model.id)
-                                                            }
-                                                        }
-                                                    }
+
                                                 }
                                             )
                                         }
