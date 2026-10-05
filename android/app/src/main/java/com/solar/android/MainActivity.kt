@@ -139,7 +139,7 @@ class SolarApi(context: Context) {
     var baseUrl: String
         get() = prefs.getString(
             "base",
-            BuildConfig.DEFAULT_BACKEND_URL.ifBlank { "http://10.0.2.2:8080" }
+            BuildConfig.DEFAULT_BACKEND_URL.ifBlank { "" }
         )!!.trimEnd('/')
         set(value) {
             prefs.edit().putString("base", value.trim().trimEnd('/')).apply()
@@ -197,8 +197,7 @@ class SolarApi(context: Context) {
     }
 
     private fun builder(path: String, method: String = "GET", body: String? = null): Request {
-        val b = Request.Builder().url(baseUrl + path)
-        if (!authToken.isNullOrBlank()) b.header("Authorization", "Bearer " + authToken)
+        val b = Request.Builder().url(baseUrl + path)        if (!authToken.isNullOrBlank()) b.header("Authorization", "Bearer " + authToken)
         if (body != null) {
             b.header("Content-Type", "application/json")
             b.method(method, body.toRequestBody("application/json".toMediaType()))
@@ -397,7 +396,6 @@ class SolarApi(context: Context) {
         }
         clearAuth()
     }
-
     suspend fun run(
         message: String,
         model: String,
@@ -529,16 +527,20 @@ fun SolarApp(context: Context) {
     }
 
     LaunchedEffect(Unit) {
-        runCatching { api.models() }
-            .onSuccess { loaded ->
-                models = loaded
-                if (selectedModel.isBlank()) {
-                    selectedModel = loaded.firstOrNull()?.id.orEmpty()
-                    if (selectedModel.isNotBlank()) api.setSelectedModelId(selectedModel)
+        if (api.baseUrl.isBlank()) {
+            error = "Backend URL is not configured. Open Settings and enter your Solar backend URL."
+        } else {
+            runCatching { api.models() }
+                .onSuccess { loaded ->
+                    models = loaded
+                    if (selectedModel.isBlank()) {
+                        selectedModel = loaded.firstOrNull()?.id.orEmpty()
+                        if (selectedModel.isNotBlank()) api.setSelectedModelId(selectedModel)
+                    }
                 }
-            }
-            .onFailure { error = it.message }
-        refreshWorkspace()
+                .onFailure { error = it.message ?: "Unable to reach the Solar backend." }
+            refreshWorkspace()
+        }
     }
 
     LaunchedEffect(pendingAuthId) {
@@ -597,8 +599,7 @@ fun SolarApp(context: Context) {
 
     fun selectModel(id: String) {
         if (id.isBlank()) return
-        selectedModel = id
-        api.setSelectedModelId(id)
+        selectedModel = id        api.setSelectedModelId(id)
         val sid = selectedSessionId ?: return
         scope.launch {
             runCatching { api.updateSession(sid, modelId = id) }
@@ -674,7 +675,7 @@ fun SolarApp(context: Context) {
             authBusy = true
             val healthError = runCatching { api.health() }.exceptionOrNull()
             if (healthError != null) {
-                error = "Backend is not reachable at " + api.baseUrl + ". Set a reachable HTTPS backend URL in Settings first."
+                error = if (api.baseUrl.isBlank()) { "Backend URL is not configured. Open Settings and enter your Solar backend URL." } else { "Backend is not reachable at " + api.baseUrl + ". Check the URL and make sure the backend is running." }
                 authBusy = false
                 return@launch
             }
@@ -797,8 +798,7 @@ fun SolarApp(context: Context) {
                         }
 
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            modifier = Modifier.fillMaxWidth(),                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Box(Modifier.weight(1f)) {
                                 OutlinedButton(
@@ -997,8 +997,7 @@ fun SolarApp(context: Context) {
                             Icon(Icons.Default.Refresh, "Refresh")
                         }
                         Button(onClick = { showProjectDialog = true }) {
-                            Icon(Icons.Default.Add, null)
-                            Spacer(Modifier.width(4.dp))
+                            Icon(Icons.Default.Add, null)                            Spacer(Modifier.width(4.dp))
                             Text("New")
                         }
                     }
@@ -1167,7 +1166,7 @@ fun SolarApp(context: Context) {
                                 scope.launch { refreshWorkspace() }
                             }) { Text("Save backend URL") }
                             Text(
-                                "Emulator default: http://10.0.2.2:8080",
+                                "Examples: http://10.0.2.2:8080 (Android emulator) or your backend HTTPS URL on a real phone.",
                                 style = MaterialTheme.typography.labelSmall
                             )
                         }
@@ -1197,8 +1196,7 @@ fun SolarApp(context: Context) {
                             selectedSessionId = it.id
                             selectedModel = it.modelId ?: selectedModel
                             api.setSelectedModelId(selectedModel)
-                            messages = emptyList()
-                            showNewChatDialog = false
+                            messages = emptyList()                            showNewChatDialog = false
                             screen = "Chats"
                             error = null
                         }
