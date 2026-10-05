@@ -166,7 +166,10 @@ class SolarApi(context:Context){
  }
  suspend fun sessionMessages(sessionId:String):List<Msg>{
   val array=JSONObject(execute("/api/sessions/"+Uri.encode(sessionId))).getJSONArray("messages")
-  return List(array.length()) { i ->\n   val x = array.getJSONObject(i)\n   Msg(x.getString("role"), x.getString("content"))\n  }
+  return List(array.length()) { i ->
+   val x = array.getJSONObject(i)
+   Msg(x.getString("role"), x.getString("content"))
+  }
  }
  suspend fun run(message:String,model:String,projectId:String?,sessionId:String?,flags:Map<String,Boolean>):Pair<String,String>{
   val payload=JSONObject().put("message",message).put("modelId",model).put("projectId",projectId?:JSONObject.NULL).put("sessionId",sessionId?:JSONObject.NULL).put("stream",false)
