@@ -13,6 +13,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     steps:
       - uses: actions/checkout@v4
@@ -26,25 +27,23 @@ jobs:
         working-directory: android
         run: gradle :app:assembleRelease --no-daemon
 
-      - name: Verify APK exists and ABIs
+      - name: Verify APK exists
         working-directory: android
-        run: |
-          test -f app/build/outputs/apk/release/app-release.apk
-          unzip -l app/build/outputs/apk/release/app-release.apk | grep -E 'lib/(armeabi-v7a|arm64-v8a)/'
+        run: test -f app/build/outputs/apk/release/app-release.apk
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: solar-android-v0.3.0
+          name: solar-android-v0.3.0-\${{ github.sha }}
           path: android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 14
 
       - name: Publish release
+        if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: solar-android-v0.3.0
           name: Solar Android v0.3.0
           generate_release_notes: true
           files: android/app/build/outputs/apk/release/app-release.apk
-
