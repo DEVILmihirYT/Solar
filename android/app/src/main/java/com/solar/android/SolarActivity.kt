@@ -52,11 +52,12 @@ import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SmallTopAppBar
+import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
@@ -99,16 +100,20 @@ private data class Account(val login:String,val name:String?)
 
 private class Store(context:Context) {
     private val p=context.getSharedPreferences("solar_store",Context.MODE_PRIVATE)
-    var model:String get()=p.getString("model","openrouter/free") ?: "openrouter/free" set(v)=p.edit().putString("model",v).apply()
+    var model: String
+        get() = p.getString("model", "openrouter/free") ?: "openrouter/free"
+        set(value) {
+            p.edit().putString("model", value).apply()
+        }
     fun sessions():List<Session>{
-        val raw=p.getString("sessions",null) ?: return listOf(Session("s-\${UUID.randomUUID()}","New chat",emptyList()))
+        val raw=p.getString("sessions",null) ?: return listOf(Session("s-${UUID.randomUUID()}","New chat",emptyList()))
         return runCatching{
             val a=JSONArray(raw)
             List(a.length()){i->
                 val o=a.getJSONObject(i);val m=o.optJSONArray("messages")
                 Session(o.getString("id"),o.optString("name","Chat"),List(m?.length()?:0){j->{val x=m!!.getJSONObject(j);Msg(x.optString("role"),x.optString("text"))}})
             }
-        }.getOrDefault(listOf(Session("s-\${UUID.randomUUID()}","New chat",emptyList())))
+        }.getOrDefault(listOf(Session("s-${UUID.randomUUID()}","New chat",emptyList())))
     }
     fun saveSessions(list:List<Session>){val a=JSONArray();list.forEach{s->val o=JSONObject().put("id",s.id).put("name",s.name);val m=JSONArray();s.messages.forEach{x->m.put(JSONObject().put("role",x.role).put("text",x.text))};o.put("messages",m);a.put(o)};p.edit().putString("sessions",a.toString()).apply()}
     fun projects():List<Project>{
@@ -122,8 +127,20 @@ private class Store(context:Context) {
 
 private class Api(context:Context){
     private val p=context.getSharedPreferences("solar",Context.MODE_PRIVATE)
-    var baseUrl:String get()=p.getString("base","http://10.0.2.2:8080")!!.trimEnd('/') set(v)=p.edit().putString("base",v.trimEnd('/')).apply()
-    var session:String? get()=p.getString("session_id",null) private set(v){val e=p.edit();if(v.isNullOrBlank())e.remove("session_id")else e.putString("session_id",v);e.apply()}
+    var baseUrl: String
+        get() = p.getString("base", "http://10.0.2.2:8080")!!.trimEnd('/')
+        set(value) {
+            p.edit().putString("base", value.trimEnd('/')).apply()
+        }
+
+    var session: String?
+        get() = p.getString("session_id", null)
+        private set(value) {
+            val editor = p.edit()
+            if (value.isNullOrBlank()) editor.remove("session_id")
+            else editor.putString("session_id", value)
+            editor.apply()
+        }
     private val client=OkHttpClient()
     private fun call(path:String,method:String="GET",json:String?=null):Response{
         val b=Request.Builder().url(baseUrl+path);session?.let{b.header("X-Solar-Session",it)}
@@ -157,7 +174,7 @@ private class Api(context:Context){
         val r=call("/api/agent/run","POST",o.toString());val t=body(r);if(!r.isSuccessful)throw Exception(err(t,"Solar request failed."))
         JSONObject(t).optString("message",JSONObject(t).optString("answer","No response returned."))
     }
-    fun login(context:Context)=CustomTabsIntent.Builder().setShowTitle(true).build().launchUrl(context,Uri.parse("\$baseUrl/api/auth/github?mobile=1"))
+    fun login(context:Context)=CustomTabsIntent.Builder().setShowTitle(true).build().launchUrl(context,Uri.parse("$baseUrl/api/auth/github?mobile=1"))
 }
 
 class SolarActivity:ComponentActivity(){
@@ -205,8 +222,8 @@ class SolarActivity:ComponentActivity(){
 
     fun saveSession(next:List<Session>){sessions=next;store.saveSessions(next)}
     fun saveProjects(next:List<Project>){projects=next;store.saveProjects(next)}
-    fun newChat(){val s=Session("s-\${UUID.randomUUID()}","New chat",emptyList());saveSession(listOf(s)+sessions);activeSessionId=s.id;scope.launch{drawer.close()}}
-    fun deleteChat(id:String){val next=sessions.filterNot{it.id==id}.ifEmpty{listOf(Session("s-\${UUID.randomUUID()}","New chat",emptyList()))};saveSession(next);if(activeSessionId==id)activeSessionId=next.first().id}
+    fun newChat(){val s=Session("s-${UUID.randomUUID()}","New chat",emptyList());saveSession(listOf(s)+sessions);activeSessionId=s.id;scope.launch{drawer.close()}}
+    fun deleteChat(id:String){val next=sessions.filterNot{it.id==id}.ifEmpty{listOf(Session("s-${UUID.randomUUID()}","New chat",emptyList()))};saveSession(next);if(activeSessionId==id)activeSessionId=next.first().id}
     fun append(m:Msg){val s=active;val name=if(s.name=="New chat"&&m.role=="user")m.text.take(32)else s.name;saveSession(sessions.map{if(it.id==s.id)it.copy(name=name,messages=it.messages+m)else it})}
 
     LaunchedEffect(Unit){
@@ -224,7 +241,7 @@ class SolarActivity:ComponentActivity(){
         drawerState=drawer,
         gesturesEnabled=tab=="Chat",
         drawerContent={
-            ModalDrawerSheet(containerColor=Panel){
+            ModalDrawerSheet(drawerContainerColor = Panel){
                 Column(Modifier.fillMaxSize().padding(16.dp)){
                     Text("SOLAR",fontWeight=FontWeight.Black,color=Accent,style=MaterialTheme.typography.headlineSmall)
                     Spacer(Modifier.height(14.dp))
@@ -274,9 +291,9 @@ class SolarActivity:ComponentActivity(){
             when(tab){
                 "Chat"->ChatView(pad,active,model,project,text,loading,error,{text=it},{showProjects=true},{
                     val q=text.trim()
-                    if(q.isBlank()||loading||model==null)return@ChatView
-                    text="";error=null;append(Msg("user",q));loading=true
-                    scope.launch{
+                    if (!q.isBlank() && !loading && model != null) {
+                        text="";error=null;append(Msg("user",q));loading=true
+                        scope.launch{
                         try{append(Msg("assistant",api.run(q,selectedModel,mapOf("allowWrites" to writes,"allowTermux" to termux,"allowInternet" to internet,"allowBrowser" to browser,"allowFallback" to true)))}
                         catch(e:Exception){error=e.message?:"Request failed"}
                         finally{loading=false}
@@ -293,10 +310,10 @@ class SolarActivity:ComponentActivity(){
         title={Text("Choose AI model")},
         text={LazyColumn(verticalArrangement=Arrangement.spacedBy(7.dp)){
             items(models){m->
-                Card(onClick={selectedModel=m.id;store.model=m.id;showModels=false},colors=CardDefaults.cardColors(if(m.id==selectedModel)Panel2 else Panel),modifier=Modifier.fillMaxWidth()){
+                Card(onClick={selectedModel=m.id;store.model=m.id;showModels=false},colors = CardDefaults.cardColors(containerColor = if (m.id == selectedModel) Panel2 else Panel),modifier=Modifier.fillMaxWidth()){
                     Column(Modifier.padding(13.dp)){
                         Text(m.name,fontWeight=FontWeight.Bold)
-                        Text("\${m.provider} • \${m.caps.joinToString(", ")}",color=Muted,style=MaterialTheme.typography.labelSmall)
+                        Text("${m.provider} • ${m.caps.joinToString(", ")}",color=Muted,style=MaterialTheme.typography.labelSmall)
                         if(m.desc.isNotBlank())Text(m.desc,color=Muted,style=MaterialTheme.typography.bodySmall)
                     }
                 }
@@ -321,7 +338,7 @@ class SolarActivity:ComponentActivity(){
             OutlinedTextField(newBranch,{newBranch=it},label={Text("Branch")},singleLine=true)
         }},
         confirmButton={Button(onClick={
-            val p=Project("p-\${UUID.randomUUID()}",newName.trim().ifBlank{"Untitled project"},newRepo,newBranch.ifBlank{"main"})
+            val p=Project("p-${UUID.randomUUID()}",newName.trim().ifBlank{"Untitled project"},newRepo,newBranch.ifBlank{"main"})
             saveProjects(listOf(p)+projects);activeProjectId=p.id;newName="";newRepo="";newBranch="main";showCreate=false
         }){Text("Create")}},
         dismissButton={TextButton(onClick={showCreate=false}){Text("Cancel")}}
@@ -332,7 +349,16 @@ class SolarActivity:ComponentActivity(){
         title={Text("GitHub repositories")},
         text={LazyColumn{items(repos){r->
             NavigationDrawerItem(
-                label={Column{Text(r.fullName);Text("\${if(r.privateRepo) "Private" else "Public"} • \${r.branch}",color=Muted,style=MaterialTheme.typography.labelSmall)}},
+                label = {
+                    Column {
+                        Text(r.fullName)
+                        Text(
+                            (if (r.privateRepo) "Private" else "Public") + " • " + r.branch,
+                            color = Muted,
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                    }
+                },
                 selected=newRepo==r.fullName,
                 onClick={newRepo=r.fullName;newBranch=r.branch;showRepos=false},
                 icon={Icon(Icons.Default.Code,null)}
@@ -389,14 +415,14 @@ class SolarActivity:ComponentActivity(){
                     OutlinedButton(onClick=connect){Text("Connect")}
                 }
             }
-        }else{TextButton(onClick=refresh){Text("Refresh \${repos.size} repos")}}
+        }else{TextButton(onClick=refresh){Text("Refresh ${repos.size} repos")}}
         Spacer(Modifier.height(8.dp))
         LazyColumn(verticalArrangement=Arrangement.spacedBy(9.dp)){
             items(projects){p->
                 Card(onClick={select(p.id)},colors=CardDefaults.cardColors(if(p.id==active)Panel2 else Panel),modifier=Modifier.fillMaxWidth()){
                     Column(Modifier.padding(15.dp)){
                         Row{Icon(Icons.Default.Folder,null,tint=Accent);Spacer(Modifier.width(8.dp));Text(p.name,fontWeight=FontWeight.Bold)}
-                        Spacer(Modifier.height(5.dp));Text(p.repo.ifBlank{"No GitHub repo linked"},color=Muted);Text("Branch: \${p.branch}",color=Muted,style=MaterialTheme.typography.labelSmall)
+                        Spacer(Modifier.height(5.dp));Text(p.repo.ifBlank{"No GitHub repo linked"},color=Muted);Text("Branch: ${p.branch}",color=Muted,style=MaterialTheme.typography.labelSmall)
                     }
                 }
             }
