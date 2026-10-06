@@ -1,8 +1,10 @@
 import pg from "pg";
 import { config } from "./config.js";
 const { Pool }=pg;
-export const pool=new Pool({connectionString:config.DATABASE_URL,max:10});
+const unavailable=async(..._args:any[]):Promise<never>=>{throw new Error("Database is not configured on this deployment");};
+export const pool:pg.Pool=config.DATABASE_URL?new Pool({connectionString:config.DATABASE_URL,max:10}):({query:unavailable,connect:unavailable,end:async()=>{}} as unknown as pg.Pool);
 export async function migrate():Promise<void>{
+ if(!config.DATABASE_URL){console.warn("DATABASE_URL is not configured; database-backed features remain unavailable.");return;}
  await pool.query(`
 CREATE TABLE IF NOT EXISTS users(id UUID PRIMARY KEY,github_id TEXT UNIQUE NOT NULL,github_login TEXT NOT NULL,github_name TEXT,github_avatar_url TEXT,created_at TIMESTAMPTZ NOT NULL DEFAULT now(),updated_at TIMESTAMPTZ NOT NULL DEFAULT now());
 CREATE TABLE IF NOT EXISTS github_accounts(user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,access_token_enc TEXT NOT NULL,refresh_token_enc TEXT,access_expires_at TIMESTAMPTZ,refresh_expires_at TIMESTAMPTZ,scopes TEXT NOT NULL DEFAULT '',updated_at TIMESTAMPTZ NOT NULL DEFAULT now());
