@@ -19,7 +19,11 @@ jobs:
       - name: Commit lockfile
         shell: bash
         run: |
-          if git diff --quiet -- package-lock.json; then
+          if [ ! -f package-lock.json ]; then
+            echo "package-lock.json was not generated"
+            exit 1
+          fi
+          if git diff --quiet -- package-lock.json && git ls-files --error-unmatch package-lock.json >/dev/null 2>&1; then
             echo "package-lock.json already up to date"
             exit 0
           fi
