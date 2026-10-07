@@ -203,7 +203,9 @@ class SolarApi(context: Context) {
             b.header("Content-Type", "application/json")
             b.method(method, body.toRequestBody("application/json".toMediaType()))
         } else if (method != "GET") {
-            b.method(method, null)
+            // OkHttp requires a non-null body for POST/PUT/PATCH/DELETE requests.
+            // Use an empty body for body-less mutations such as GitHub OAuth start/logout.
+            b.method(method, "".toRequestBody("application/json".toMediaType()))
         }
         return b.build()
     }
