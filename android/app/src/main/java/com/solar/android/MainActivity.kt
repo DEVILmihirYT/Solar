@@ -203,9 +203,9 @@ class SolarApi(context: Context) {
             b.header("Content-Type", "application/json")
             b.method(method, body.toRequestBody("application/json".toMediaType()))
         } else if (method != "GET") {
-            // OkHttp requires a non-null body for body-less mutation requests.
-            // This covers GitHub OAuth start/logout and similar POST calls.
-            b.method(method, "".toRequestBody("application/json".toMediaType()))
+            // Keep body-less POST/DELETE requests compatible with Fastify:
+            // OkHttp still receives a non-null empty body, but no JSON Content-Type.
+            b.method(method, ByteArray(0).toRequestBody(null))
         }
         return b.build()
     }
