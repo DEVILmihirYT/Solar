@@ -15,8 +15,8 @@ android {
         applicationId = "com.solar.android"
         minSdk = 26
         targetSdk = 35
-        versionCode = 9
-        versionName = "0.4.8"
+        versionCode = 10
+        versionName = "0.4.9"
         val backendUrl = System.getenv("SOLAR_BACKEND_URL")?.trim().orEmpty().ifBlank { "https://solar-backend-prod.onrender.com" }
         buildConfigField("String", "DEFAULT_BACKEND_URL", "\"$backendUrl\"")
         ndk { abiFilters += listOf("armeabi-v7a", "arm64-v8a") }
