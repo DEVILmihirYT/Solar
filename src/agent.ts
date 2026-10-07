@@ -74,6 +74,7 @@ async function callModel(model:ModelRecord,messages:ChatMessage[],signal:AbortSi
  const url=endpoint.replace(/\/$/,"")+"/chat/completions";
  const headers:Record<string,string>={"Content-Type":"application/json","X-Title":"Solar AI Coding Agent"};
  const key=model.provider==="openrouter"?config.OPENROUTER_API_KEY:process.env["MODEL_KEY_"+model.id.toUpperCase().replace(/[^A-Z0-9]/g,"_")];
+ if(model.provider==="openrouter"&&!key)throw new Error("OpenRouter API key is not configured");
  if(key)headers.Authorization="Bearer "+key;
  const r=await fetch(url,{method:"POST",headers,signal,body:JSON.stringify({model:model.provider==="openrouter"?model.id:undefined,messages,tools:definitions.map(x=>({type:"function",function:x})),tool_choice:"auto",temperature:0.2,stream:false})});
  const b=await r.json() as any;if(!r.ok)throw new Error("AI provider "+r.status+": "+(b?.error?.message??"request failed"));return b;

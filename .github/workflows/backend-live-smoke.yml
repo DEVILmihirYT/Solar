@@ -1,0 +1,28 @@
+name: Solar Backend Live Smoke Test
+on:
+  push:
+    branches: [fix/android-release-0.4.6]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  live-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Poll public health endpoint
+        shell: bash
+        run: |
+          set -u
+          url="https://solar-backend-prod.onrender.com/api/health"
+          for i in $(seq 1 30); do
+            body="$(curl -fsS --max-time 10 "$url" 2>/dev/null || true)"
+            if printf '%s' "$body" | grep -q '"ok":true'; then
+              echo "Live health check passed: $body"
+              exit 0
+            fi
+            echo "Health not ready yet (attempt $i/30): $body"
+            sleep 10
+          done
+          echo "Live health check failed"
+          exit 1

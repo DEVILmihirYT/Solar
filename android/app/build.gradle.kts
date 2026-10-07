@@ -1,3 +1,4 @@
+// Solar release build
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -8,22 +9,17 @@ android {
     namespace = "com.solar.android"
     compileSdk = 35
 
-    buildFeatures {
-        buildConfig = true
-    }
+    buildFeatures { buildConfig = true }
 
     defaultConfig {
         applicationId = "com.solar.android"
         minSdk = 26
         targetSdk = 35
-        versionCode = 7
-        versionName = "0.4.5"
-        val backendUrl = System.getenv("SOLAR_BACKEND_URL")?.trim().orEmpty()
+        versionCode = 9
+        versionName = "0.4.7"
+        val backendUrl = System.getenv("SOLAR_BACKEND_URL")?.trim().orEmpty().ifBlank { "https://solar-backend-prod.onrender.com" }
         buildConfigField("String", "DEFAULT_BACKEND_URL", "\"$backendUrl\"")
-
-        ndk {
-            abiFilters += listOf("armeabi-v7a", "arm64-v8a")
-        }
+        ndk { abiFilters += listOf("armeabi-v7a", "arm64-v8a") }
     }
 
     splits {
@@ -39,18 +35,8 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-
-    kotlin {
-        compilerOptions {
-            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
-        }
-    }
-
-    buildTypes {
-        getByName("release") {
-            signingConfig = signingConfigs.getByName("debug")
-        }
-    }
+    kotlin { compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) } }
+    buildTypes { getByName("release") { signingConfig = signingConfigs.getByName("debug") } }
 }
 
 dependencies {

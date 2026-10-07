@@ -33,8 +33,11 @@ function mobileDoneHtml(ok:boolean,message:string){
 
 export async function registerAuth(app:FastifyInstance){
  const secure=config.NODE_ENV==="production";
+ const requireDatabase=(reply:FastifyReply)=>{if(!config.DATABASE_URL){reply.code(503).send({error:"Database is not configured"});return false}return true};
+ const requireGitHub=(reply:FastifyReply)=>{if(!config.GITHUB_CLIENT_ID||!config.GITHUB_CLIENT_SECRET){reply.code(503).send({error:"GitHub OAuth is not configured"});return false}return true};
 
  app.post("/api/auth/github/mobile/start",async(_req,reply)=>{
+  if(!requireDatabase(reply)||!requireGitHub(reply))return;
   const state=randomToken(32),verifier=randomToken(48),requestId=randomToken(32);
   await pool.query(
    "INSERT INTO oauth_mobile_requests(id_hash,state_hash,verifier_enc,status,expires_at) VALUES($1,$2,$3,'pending',$4)",
@@ -52,6 +55,7 @@ export async function registerAuth(app:FastifyInstance){
  });
 
  app.get("/api/auth/github/mobile/status",async(req,reply)=>{
+  if(!requireDatabase(reply))return;
   const requestId=String((req.query as {requestId?:string}).requestId??"");
   if(!/^[A-Za-z0-9_-]{20,200}$/.test(requestId))return reply.code(400).send({error:"Invalid request id"});
   const c=await pool.connect();
@@ -71,6 +75,7 @@ export async function registerAuth(app:FastifyInstance){
  });
 
  app.get("/api/auth/github",async(_req,reply)=>{
+  if(!requireDatabase(reply)||!requireGitHub(reply))return;
   const state=randomToken(32),verifier=randomToken(48);
   reply.setCookie(OAUTH_COOKIE,JSON.stringify({state,verifier}),{...cookieOptions(secure),maxAge:600});
   const p=new URLSearchParams({client_id:config.GITHUB_CLIENT_ID,redirect_uri:config.GITHUB_CALLBACK_URL,state,code_challenge:pkceChallenge(verifier),code_challenge_method:"S256",scope:"read:user repo"});
@@ -78,6 +83,7 @@ export async function registerAuth(app:FastifyInstance){
  });
 
  app.get("/api/auth/github/callback",async(req,reply)=>{
+  if(!requireDatabase(reply)||!requireGitHub(reply))return;
   const q=req.query as {code?:string;state?:string};
   const state=q.state??"";
   if(!q.code||!state)return reply.code(400).send({error:"Invalid OAuth callback"});
@@ -163,6 +169,7 @@ async function finishMobileFailure(requestIdHash:string,error:string){
 }
 
 export async function requireAuth(req:FastifyRequest,reply:FastifyReply){
+ if(!config.DATABASE_URL)return void reply.code(503).send({error:"Database is not configured"});
  const sid=sessionIdFromRequest(req);
  if(!sid)return void reply.code(401).send({error:"Authentication required"});
  const q=await pool.query<any>("SELECT s.user_id,u.github_id,u.github_login,u.github_name,u.github_avatar_url,ga.access_token_enc FROM sessions s JOIN users u ON u.id=s.user_id JOIN github_accounts ga ON ga.user_id=u.id WHERE s.id=$1 AND s.expires_at>now()",[sid]);
