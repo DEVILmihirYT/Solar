@@ -24,4 +24,5 @@ app.setErrorHandler((error,_req,reply)=>{
 });
 const shutdown=async()=>{await app.close();await pool.end();process.exit(0)};
 process.on("SIGTERM",shutdown);process.on("SIGINT",shutdown);
-await app.listen({port:config.PORT,host:"0.0.0.0"});\n  app.log.info({databaseConfigured:Boolean(config.DATABASE_URL),githubOAuthConfigured:Boolean(config.GITHUB_CLIENT_ID&&config.GITHUB_CLIENT_SECRET),openRouterConfigured:Boolean(config.OPENROUTER_API_KEY)}, "Solar production integration configuration");
+await app.listen({port:config.PORT,host:"0.0.0.0"});
+  app.log.info({databaseConfigured:Boolean(config.DATABASE_URL),githubOAuthConfigured:Boolean(config.GITHUB_CLIENT_ID&&config.GITHUB_CLIENT_SECRET),openRouterConfigured:Boolean(config.OPENROUTER_API_KEY)}, "Solar production integration configuration");
